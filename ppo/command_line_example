@@ -1,0 +1,7 @@
+python main.py --env-name CartPole-v1 --algo ppo --num-env-steps 50000 --recurrent-policy --num-mini-batch 8
+
+algo: ppo or a2c
+env-name: gym environment to use
+num-env-steps: number of total training steps
+recurrent-policy: whether to use LSTM
+num-mini-batch: must be lower than num-processes (default 16) for ppo

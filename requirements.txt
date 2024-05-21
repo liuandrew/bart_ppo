@@ -1,0 +1,6 @@
+gym==0.21.0
+matplotlib
+pybullet
+stable-baselines3
+tensorboard
+h5py
