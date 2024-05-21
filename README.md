@@ -6,6 +6,23 @@ This is Andrew Liu's fork of pytorch-a2c-ppo-acktr-gail
 
 Here I will be making some slight adjustments to code to make it nicer to track experiments with
 
+### Set up conda environment with dependencies
+
+Install Anaconda to set up Python. I prefer Miniconda https://docs.anaconda.com/free/miniconda/miniconda-install/
+
+Open up an Anaconda Prompt. Run the following to create an environment
+
+```
+$ conda create -n bart python=3.9
+$ conda activate bart
+```
+
+Navigate to this folder (use the command `cd` to navigate), and run
+```
+$ pip install -r requirements.txt
+```
+to install required Python packages.
+
 ### Changes from Original
 
 In each of the files, you can search "Andy:" for places where the original code was changed.

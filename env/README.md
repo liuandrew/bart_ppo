@@ -2,7 +2,7 @@
 
 ## Instructions
 
-In this folder run the command
+To install the custom environments, in this folder run the command
 ```
 $ pip install -e .
 ```
