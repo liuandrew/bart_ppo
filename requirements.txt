@@ -12,3 +12,4 @@ tensorboard==2.10.0
 fastai==2.7.10
 h5py
 jupyterlab
+ipywidgets=8.1.2
