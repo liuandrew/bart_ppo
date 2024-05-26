@@ -7,7 +7,7 @@ from shutil import copyfile
 from pathlib import Path
 
 import gym
-import gym_nav
+import gym_bart
 import numpy as np
 import torch
 import torch.nn as nn

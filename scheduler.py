@@ -100,6 +100,10 @@ if __name__ == "__main__":
     parser.add_argument('--cont', type=lambda x:bool(strtobool(x)), default=False, nargs='?', const=True,
         help='if toggled, attempt to load a model as named from save_path under the right folder to continue experiment')
 
+    parser.add_argument('--verbose', type=lambda x:bool(strtobool(x)), default=False, nargs='?', const=True,
+        help='if toggled, print out the command line main.py that ends up running')
+
+
     args = parser.parse_args()
 
     files = os.listdir(CONFIG_FOLDER)
@@ -111,6 +115,9 @@ if __name__ == "__main__":
                 continue
         if file not in ['.ipynb_checkpoints', 'archive', '.gitkeep']:
             print('running experiment: ', file)
+            
+            if args.verbose:
+                print(convert_config_to_command(file, python3=args.python3, cont=args.cont))
             # print(args.cont)
             run_experiment(file, python3=args.python3, cont=args.cont)
             print('experiment complete')

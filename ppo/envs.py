@@ -1,7 +1,7 @@
 import os
 
 import gym
-import gym_nav
+import gym_bart
 import numpy as np
 import torch
 from gym.spaces.box import Box
