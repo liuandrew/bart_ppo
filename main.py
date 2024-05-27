@@ -308,7 +308,8 @@ def main():
 
             # Obser reward and next obs
             # obs, reward, done, infos = envs.step(action)
-            obs, reward, done, infos = envs.step(action)
+            obs, reward, terminated, truncated, infos = envs.step(action)
+            done = terminated or truncated
             
             auxiliary_truths = [[] for i in range(len(actor_critic.auxiliary_output_sizes))]
             for n, info in enumerate(infos):

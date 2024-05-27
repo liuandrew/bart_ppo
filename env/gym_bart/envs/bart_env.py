@@ -6,6 +6,7 @@ import torch
 import random
 
 class BartEnv(gym.Env):
+    metadata = {"render.modes": ["rgb_array"], "video.frames_per_second": 24}
     def __init__(self, colors_used=1, hold_to_inflate=True, 
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=0,
@@ -58,7 +59,10 @@ class BartEnv(gym.Env):
         self.action_space = spaces.Discrete(2)  # 0: do nothing, 1: hold inflate button
 
 
-    def reset(self):
+    def reset(self, seed=None, options={}):
+        if seed is not None:
+            np.random.seed(seed)
+        
         if self.colors_used <= 1:
             self.current_color = "yellow"
         else:
@@ -72,10 +76,11 @@ class BartEnv(gym.Env):
         mean = self.colors[self.current_color]["mean"]
         self.current_balloon_limit = random.gauss(mean, self.pop_noise)
 
-        return self.get_observation()
+        return self.get_observation(), {}
 
     def step(self, action):
-        done = False
+        terminated = False
+        truncated = False
         reward = 0
 
         if self.hold_to_inflate:
@@ -87,7 +92,7 @@ class BartEnv(gym.Env):
                     self.current_size > self.current_balloon_limit:
                     self.current_size = 0  # Balloon pops
                     reward = self.rew_on_pop
-                    done = True
+                    terminated = True
                 # elif self.current_color in ["gray", "purple"]:
                 #     if self.current_size >= 20:  # Fixed size for passive trials
                 #         self.current_size = 20
@@ -97,14 +102,14 @@ class BartEnv(gym.Env):
                     reward = self.current_size
                 # elif self.current_color in ["gray", "purple"]:
                 #     reward = self.colors[self.current_color]["fixed_reward"]
-                done = True
+                terminated = True
         else:
             if self.currently_inflating:
                 if action == 1:
                     if self.current_color in ["red", "yellow", "orange"]:
                         reward = self.current_size
                         self.currently_inflating = False
-                        done = True
+                        terminated = True
                 if action == 0:
                     inflate = random.gauss(self.inflate_speed, self.inflate_noise)
                     self.current_size += inflate
@@ -113,7 +118,7 @@ class BartEnv(gym.Env):
                         self.current_size = 0  # Balloon pops
                         reward = self.rew_on_pop
                         self.currently_inflating = False
-                        done = True
+                        terminated = True
             else:
                 if action == 1:
                     self.currently_inflating = True
@@ -121,10 +126,10 @@ class BartEnv(gym.Env):
                     self.current_size += inflate
                 
         self.prev_action = action
-        return self.get_observation(), reward, done, {}
+        return self.get_observation(), reward, terminated, truncated, {}
     
     def get_observation(self):
-        obs = torch.zeros(8, dtype=torch.float)
+        obs = np.zeros(8, dtype=np.float32)
         obs[self.color_to_idx[self.current_color]] = 1
         if self.give_size:
             obs[len(self.colors)] = self.current_size
@@ -132,5 +137,8 @@ class BartEnv(gym.Env):
             obs[len(self.colors)+1+self.prev_action] = 1
             
         return obs
+    
+    def render(self, mode="rgb_array"):
+        return np.zeros((64, 64))
     
     

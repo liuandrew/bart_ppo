@@ -21,7 +21,8 @@ def populate_rollouts(model, envs, rollouts, num_steps):
             recurrent_hidden_states = outputs['rnn_hxs']
             # auxiliary_preds = outputs['auxiliary_preds']
 
-        obs, reward, done, infos = envs.step(action)
+        obs, reward, terminated, truncated, infos = envs.step(action)
+        done = terminated or truncated
 
         masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
         bad_masks = torch.FloatTensor([[0.0] if 'bad_transition' in info.keys() else [1.0] for info in infos])

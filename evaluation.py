@@ -100,7 +100,8 @@ def evaluate(actor_critic, obs_rms=None, normalize=True, env_name='NavEnv-v0', s
                                         with_activations=with_activations)
                 action = outputs['action']
                 rnn_hxs = outputs['rnn_hxs']
-            obs, reward, done, infos = envs.step(action)
+            obs, reward, terminated, truncated, infos = envs.step(action)
+            done = terminated or truncated
             
             masks = torch.tensor(
                 [[0.0] if done_ else [1.0] for done_ in done],
@@ -365,7 +366,8 @@ def evaluate_steps(actor_critic, envs, num_steps=10, data_callback=None,
                                     with_activations=with_activations)
             action = outputs['action']
             rnn_hxs = outputs['rnn_hxs']
-        obs, reward, done, infos = envs.step(action)
+        obs, reward, terminated, truncated, infos = envs.step(action)
+        done = terminated or truncated
         
         masks = torch.tensor(
             [[0.0] if done_ else [1.0] for done_ in done],
