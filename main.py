@@ -312,7 +312,7 @@ def main():
             # Obser reward and next obs
             obs, reward, done, infos = envs.step(action)
             obs = torch.tensor(obs, dtype=torch.float)
-            reward = torch.tensor(reward, dtype=torch.float)
+            reward = torch.tensor(reward, dtype=torch.float).reshape(args.num_processes, 1)
             # obs, reward, terminated, truncated, infos = envs.step(action)
             # done = terminated or truncated
             
@@ -330,7 +330,7 @@ def main():
                 if 'episode' in info.keys():
                     # This marks episode done, record to writer
                     episode_rewards.append(info['episode']['r'])
-                    print(f'global_step={global_step}')
+                    print(f'global_step={global_step}, rew={info["episode"]["r"]}, len={info["episode"]["l"]}')
                     # Andy: add tensorboard writing episode returns
                     writer.add_scalar("charts/episodic_return", info["episode"]["r"], 
                         global_step)
