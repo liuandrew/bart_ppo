@@ -1,12 +1,12 @@
 import numpy as np
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import torch
 
 import random
 
 class BartEnv(gym.Env):
-    metadata = {"render.modes": ["rgb_array"], "video.frames_per_second": 24}
+    metadata = {"render_modes": ["rgb_array"], "video.frames_per_second": 24}
     def __init__(self, colors_used=1, hold_to_inflate=True, 
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=0,
@@ -37,7 +37,9 @@ class BartEnv(gym.Env):
             "purple": {"fixed_reward": 1}
         }
         self.color_to_idx = {"red": 0, "yellow": 1, "orange": 2,
-                             "gray": 3, "purple": 5}
+                             "gray": 3, "purple": 4}
+        self.idx_to_color = {0: "red", 1: "yellow", 2: "orange",
+                             3: "gray", 4: "purple"}
         # Env setup parameters
         self.colors_used = colors_used
         self.hold_to_inflate = hold_to_inflate
@@ -62,11 +64,12 @@ class BartEnv(gym.Env):
     def reset(self, seed=None, options={}):
         if seed is not None:
             np.random.seed(seed)
+            random.seed(seed)
         
         if self.colors_used <= 1:
             self.current_color = "yellow"
         else:
-            self.current_color = random.choice(range(self.colors_used))        
+            self.current_color = self.idx_to_color[random.choice(range(self.colors_used))]
         self.current_size = 0.0
         self.prev_action = 0
 

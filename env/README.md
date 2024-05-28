@@ -8,7 +8,7 @@ $ pip install -e .
 ```
 To install and register the environments below. To import, do 
 ```
-import gym
+import gymnasium as gym
 import gym_nav
 env = gym.make('NavEnv')
 ```
