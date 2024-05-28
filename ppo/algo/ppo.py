@@ -158,7 +158,8 @@ class PPOAux():
                  remove_actor_grads_on_shared=False):
 
         self.actor_critic = actor_critic
-        self.auxiliary_types = actor_critic.base.auxiliary_layer_types
+        if self.actor_critic.has_auxiliary:
+            self.auxiliary_types = actor_critic.base.auxiliary_layer_types
         self.cross_entropy_loss = nn.CrossEntropyLoss() #used for multiclass aux loss
 
         self.clip_param = clip_param

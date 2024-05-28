@@ -20,4 +20,5 @@ write_and_test/plots/*.pdf
 ppo/algo/__pycache__/*
 ppo/__pycache__/*
 __pycache__/*
+logs/*
 

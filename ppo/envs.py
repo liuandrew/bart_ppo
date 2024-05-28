@@ -1,6 +1,6 @@
 import os
 
-import gym
+import gymnasium as gym
 import gym_bart
 import numpy as np
 import torch
@@ -14,8 +14,9 @@ from stable_baselines3.common.atari_wrappers import (ClipRewardEnv,
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,
                                               VecEnvWrapper)
-from stable_baselines3.common.vec_env.vec_normalize import \
-    VecNormalize as VecNormalize_
+from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
+from stable_baselines3.common.vec_env.patch_gym import _patch_env
+from typing import Any, Callable, Dict, Optional, Type, Union
 from collections import deque
 
 try:
@@ -33,7 +34,97 @@ try:
 except ImportError:
     pass
 
+"""
+Useful examples https://stable-baselines3.readthedocs.io/en/master/guide/examples.html
+"""
 
+def make_vec_env(env_id,
+                  seed=None,
+                  n_envs=1,
+                  gamma=0.99,
+                  env_kwargs={},
+                  auxiliary_tasks=[],
+                  auxiliary_task_args=[],
+                  start_index=0,
+                  normalize=True,
+                  vec_env_cls=None,
+                  wrapper_class=None,
+                  monitor_dir=None,
+                  monitor_kwargs=None,
+                  vec_env_kwargs=None,
+                  wrapper_kwargs=None,
+                  dummy=True):
+    """
+    Largely copied from https://stable-baselines3.readthedocs.io/en/master/_modules/stable_baselines3/common/env_util.html
+    Make a set of vectorized environments
+    seed: VecEnv calls this once and resets using an incrementing seed on first reset
+    gamma: discount factor used for normalization calculations
+    dummy: whether to use a DummyVecEnv which isn't parallelized
+    """
+    env_kwargs = env_kwargs or {}
+    vec_env_kwargs = vec_env_kwargs or {}
+    monitor_kwargs = monitor_kwargs or {}
+    wrapper_kwargs = wrapper_kwargs or {}
+    assert vec_env_kwargs is not None  # for mypy
+
+    def make_env(rank: int) -> Callable[[], gym.Env]:
+        def _init() -> gym.Env:
+            # For type checker:
+            assert monitor_kwargs is not None
+            assert wrapper_kwargs is not None
+            assert env_kwargs is not None
+
+            if isinstance(env_id, str):
+                # if the render mode was not specified, we set it to `rgb_array` as default.
+                kwargs = {"render_mode": "rgb_array"}
+                kwargs.update(env_kwargs)
+                try:
+                    env = gym.make(env_id, **kwargs)  # type: ignore[arg-type]
+                except TypeError:
+                    env = gym.make(env_id, **env_kwargs)
+            else:
+                env = env_id(**env_kwargs)
+                # Patch to support gym 0.21/0.26 and gymnasium
+                env = _patch_env(env)
+
+            if seed is not None:
+                # Note: here we only seed the action space
+                # We will seed the env at the next reset
+                env.action_space.seed(seed + rank)
+            # Wrap the env in a Monitor wrapper
+            # to have additional training information
+            monitor_path = os.path.join(monitor_dir, str(rank)) if monitor_dir is not None else None
+            # Create the monitor folder if needed
+            if monitor_path is not None and monitor_dir is not None:
+                os.makedirs(monitor_dir, exist_ok=True)
+            env = Monitor(env, filename=monitor_path, **monitor_kwargs)
+            # Optionally, wrap the environment with the provided wrapper
+            if wrapper_class is not None:
+                env = wrapper_class(env, **wrapper_kwargs)
+            return env
+
+        return _init
+    # No custom VecEnv is passed
+    if vec_env_cls is None:
+        if dummy:
+            # Default: use a DummyVecEnv
+            vec_env_cls = DummyVecEnv
+        else:
+            vec_env_cls = SubprocVecEnv
+    vec_env = vec_env_cls([make_env(i + start_index) for i in range(n_envs)], **vec_env_kwargs)
+    # Prepare the seeds for the first reset
+    vec_env.seed(seed)
+    
+    if normalize:
+        vec_env = VecNormalize(vec_env)
+        
+    return vec_env
+    
+
+
+"""
+Old vec env code
+"""
 def make_env(env_id, seed, rank, log_dir, allow_early_resets, capture_video=False,
                 env_kwargs=None, video_folder='./video'):
     def _thunk():
@@ -61,15 +152,19 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, capture_video=Fals
             env = NoopResetEnv(env, noop_max=30)
             env = MaxAndSkipEnv(env, skip=4)
 
-        env.seed(seed + rank)
+        # env.seed(seed + rank)
 
         if str(env.__class__.__name__).find('TimeLimit') >= 0:
             env = TimeLimitMask(env)
 
-        if log_dir is not None:
-            env = Monitor(env,
-                          os.path.join(log_dir, str(rank)),
-                          allow_early_resets=allow_early_resets)
+        # Monitor somehow breaks the vec environments and causes the VecNormamlize
+        #  to not recognize the observation_space as the correct type, so turning off
+        #  since we don't use it
+        
+        # if log_dir is not None:
+        #     env = Monitor(env,
+        #                   os.path.join(log_dir, str(rank)),
+        #                   allow_early_resets=allow_early_resets)
 
         if is_atari:
             if len(env.observation_space.shape) == 3:
@@ -282,27 +377,27 @@ class VecPyTorch(VecEnvWrapper):
         return obs, reward, done, info
 
 
-class VecNormalize(VecNormalize_):
-    def __init__(self, *args, **kwargs):
-        super(VecNormalize, self).__init__(*args, **kwargs)
-        self.training = True
+# class VecNormalize(VecNormalize_):
+#     def __init__(self, *args, **kwargs):
+#         super(VecNormalize, self).__init__(*args, **kwargs)
+#         self.training = True
 
-    def _obfilt(self, obs, update=True):
-        if self.obs_rms:
-            if self.training and update:
-                self.obs_rms.update(obs)
-            obs = np.clip((obs - self.obs_rms.mean) /
-                          np.sqrt(self.obs_rms.var + self.epsilon),
-                          -self.clip_obs, self.clip_obs)
-            return obs
-        else:
-            return obs
+#     def _obfilt(self, obs, update=True):
+#         if self.obs_rms:
+#             if self.training and update:
+#                 self.obs_rms.update(obs)
+#             obs = np.clip((obs - self.obs_rms.mean) /
+#                           np.sqrt(self.obs_rms.var + self.epsilon),
+#                           -self.clip_obs, self.clip_obs)
+#             return obs
+#         else:
+#             return obs
 
-    def train(self):
-        self.training = True
+#     def train(self):
+#         self.training = True
 
-    def eval(self):
-        self.training = False
+#     def eval(self):
+#         self.training = False
 
 
 # Derived from

@@ -6,7 +6,7 @@ from collections import deque
 from shutil import copyfile
 from pathlib import Path
 
-import gym
+import gymnasium as gym
 import gym_bart
 import numpy as np
 import torch
@@ -19,7 +19,7 @@ from ppo import algo, utils
 from ppo.algo.ppo import PPOAux
 from ppo.algo import gail
 from ppo.arguments import get_args
-from ppo.envs import make_vec_envs
+from ppo.envs import make_vec_env
 from ppo.model import Policy, norm_scale_parameters
 from ppo.storage import RolloutStorage, RolloutStorageAux
 from evaluation import evaluate
@@ -107,13 +107,14 @@ def main():
     print('initializing environments')
     #Andy: Add option to turn off environment normalization
     print('Normalize Env:', args.normalize_env)
-    envs = make_vec_envs(args.env_name, args.seed, args.num_processes,
-                         args.gamma, args.log_dir, device, False, capture_video=args.capture_video,
+    envs = make_vec_env(args.env_name, args.seed, args.num_processes,
+                         args.gamma,
+                         normalize=args.normalize_env,
+                         dummy=(not args.subproc_vec),
                          env_kwargs=args.env_kwargs,
                          **args.aux_wrapper_kwargs)
-    if not args.normalize_env:
-        envs.eval()
         
+    
     loaded_model = False
     # print(args.cont)
     print('initializing model')
@@ -124,10 +125,12 @@ def main():
         loaded_model = True
         if args.cont_file_name is not None:
             print('Loading', args.cont_file_name)
-            actor_critic, obs_rms = torch.load(args.cont_file_name)
+            actor_critic, (obs_rms, ret_rms) = torch.load(args.cont_file_name)
         else:
             print('Loading', save_path)
-            actor_critic, obs_rms = torch.load(save_path)
+            actor_critic, (obs_rms, ret_rms) = torch.load(save_path)
+        envs.obs_rms = obs_rms
+        envs.ret_rms = ret_rms
     
     if not loaded_model:
         actor_critic = Policy(
@@ -142,7 +145,7 @@ def main():
         #sizes
         if args.clone_parameter_experiment:
             clone_args = args.clone_args
-            clone_actor_critic, clone_obs_rms = torch.load(clone_args['clone_path'])
+            clone_actor_critic, (clone_obs_rms, clone_ret_rms) = torch.load(clone_args['clone_path'])
             
             # Named layers to clone
             clone_layers = clone_args['clone_layers'].split(',')
@@ -172,9 +175,7 @@ def main():
 
             if clone_args['copy_obs_rms']:
                 envs.obs_rms = clone_obs_rms
-            if clone_args['freeze_obs_rms']:
-                # envs.training = False
-                envs.eval()
+                envs.ret_rms = clone_ret_rms
                 
             print(f'envs.training {envs.training}')
             print(f'envs.obs_rms.mean {envs.obs_rms.mean}')
@@ -213,6 +214,8 @@ def main():
                             auxiliary_truth_sizes=args.auxiliary_truth_sizes)
 
     obs = envs.reset()
+    obs = torch.tensor(obs, dtype=torch.float)
+
     rollouts.obs[0].copy_(obs)
     rollouts.to(device)
 
@@ -307,9 +310,11 @@ def main():
 
 
             # Obser reward and next obs
-            # obs, reward, done, infos = envs.step(action)
-            obs, reward, terminated, truncated, infos = envs.step(action)
-            done = terminated or truncated
+            obs, reward, done, infos = envs.step(action)
+            obs = torch.tensor(obs, dtype=torch.float)
+            reward = torch.tensor(reward, dtype=torch.float)
+            # obs, reward, terminated, truncated, infos = envs.step(action)
+            # done = terminated or truncated
             
             auxiliary_truths = [[] for i in range(len(actor_critic.auxiliary_output_sizes))]
             for n, info in enumerate(infos):
@@ -384,7 +389,7 @@ def main():
             # Andy: change save path to use more args
             torch.save([
                 actor_critic,
-                getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
+                (envs.obs_rms, envs.ret_rms)
             ], save_path)
 
         # Andy: if checkpointing, save every interval-th episode
@@ -393,8 +398,8 @@ def main():
             chk_path = chk_folder/f'{j}.pt'
             torch.save([
                 actor_critic,
-                getattr(utils.get_vec_normalize(envs), 'obs_rms', None)
-            ], chk_path)
+                (envs.obs_rms, envs.ret_rms)
+            ], save_path)
 
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
@@ -409,7 +414,7 @@ def main():
                         action_loss))
 
 
-
+        # Likely broken
         if (args.eval_interval is not None and len(episode_rewards) > 1
                 and j % args.eval_interval == 0):
             obs_rms = utils.get_vec_normalize(envs).obs_rms

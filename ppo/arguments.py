@@ -166,6 +166,8 @@ def get_args():
     parser.add_argument('--env-kwargs', nargs='*', action=ParseKwargs, default=None)
     parser.add_argument('--normalize-env', type=lambda x:bool(strtobool(x)), default=True, nargs='?', const=False,
                         help='if toggled, turn off normalization in environment wrapper')
+    parser.add_argument('--subproc-vec', type=lambda x:bool(strtobool(x)), default=False, nargs='?', const=True,
+        help='if toggled, use SubProcVecEnv to vectorize environments')
     parser.add_argument('--cont', type=lambda x:bool(strtobool(x)), default=False, nargs='?', const=True,
         help='if toggled, attempt to load a model as named from save_path under the right folder to continue experiment')
     parser.add_argument('--cont-file-name', type=str, default=None,

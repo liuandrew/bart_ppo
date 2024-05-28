@@ -133,6 +133,7 @@ class BartEnv(gym.Env):
     
     def get_observation(self):
         obs = np.zeros(8, dtype=np.float32)
+        # obs = torch.zeros(8, dtype=torch.float)
         obs[self.color_to_idx[self.current_color]] = 1
         if self.give_size:
             obs[len(self.colors)] = self.current_size

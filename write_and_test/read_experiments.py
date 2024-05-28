@@ -13,7 +13,7 @@ import scipy.interpolate
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 sys.path.insert(0, '..')
 
-import gym
+import gymnasium as gym
 import gym_nav
 import numpy as np
 import pandas as pd

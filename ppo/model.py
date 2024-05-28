@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import gym
+import gymnasium as gym
 
 from ppo.distributions import Bernoulli, Categorical, DiagGaussian
 from ppo.utils import init
