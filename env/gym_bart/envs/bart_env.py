@@ -7,7 +7,7 @@ import random
 
 class BartEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "video.frames_per_second": 24}
-    def __init__(self, colors_used=1, hold_to_inflate=True, 
+    def __init__(self, colors_used=1, hold_to_inflate=True,
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=0,
                  pop_noise=0.05):

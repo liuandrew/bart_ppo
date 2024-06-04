@@ -14,7 +14,7 @@ from tensorboard.backend.event_processing.event_accumulator import EventAccumula
 sys.path.insert(0, '..')
 
 import gymnasium as gym
-import gym_nav
+import gym_bart
 import numpy as np
 import pandas as pd
 import torch
