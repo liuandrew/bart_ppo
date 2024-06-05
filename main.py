@@ -290,15 +290,8 @@ def main():
         #1. Collect args.num_steps * args.num_processes number of experience steps
         #from the environment
         for step in range(args.num_steps):
-            #Andy: add global step
             global_step += 1 * args.num_processes
-            # Sample actions
-            
-            #Andy: Update to use outputs dict
             with torch.no_grad():
-                # value, action, action_log_prob, recurrent_hidden_states, auxiliary_preds = \
-                # actor_critic.act(rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                #     rollouts.masks[step])
                 outputs = actor_critic.act(rollouts.obs[step], rollouts.recurrent_hidden_states[step],
                     rollouts.masks[step])
                 action = outputs['action']
@@ -307,14 +300,9 @@ def main():
                 recurrent_hidden_states = outputs['rnn_hxs']
                 auxiliary_preds = outputs['auxiliary_preds']
 
-
-
-            # Obser reward and next obs
             obs, reward, done, infos = envs.step(action)
             obs = torch.tensor(obs, dtype=torch.float)
             reward = torch.tensor(reward, dtype=torch.float).reshape(args.num_processes, 1)
-            # obs, reward, terminated, truncated, infos = envs.step(action)
-            # done = terminated or truncated
             
             auxiliary_truths = [[] for i in range(len(actor_critic.auxiliary_output_sizes))]
             for n, info in enumerate(infos):
@@ -399,7 +387,7 @@ def main():
             torch.save([
                 actor_critic,
                 (envs.obs_rms, envs.ret_rms)
-            ], save_path)
+            ], chk_path)
 
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
