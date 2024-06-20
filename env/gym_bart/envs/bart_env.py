@@ -52,6 +52,7 @@ class BartEnv(gym.Env):
         self.rew_on_pop = rew_on_pop
         self.pop_noise = pop_noise
 
+        self.inflate_delay = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Current size
@@ -72,6 +73,7 @@ class BartEnv(gym.Env):
             self.current_color = self.idx_to_color[random.choice(range(self.colors_used))]
         self.current_size = 0.0
         self.prev_action = 0
+        self.inflate_delay = 0
 
         self.currently_inflating = False # used for stop/start version
         
@@ -84,6 +86,8 @@ class BartEnv(gym.Env):
     def step(self, action):
         terminated = False
         truncated = False
+        popped = False
+        end_size = 0
         reward = 0
 
         if self.hold_to_inflate:
@@ -93,9 +97,11 @@ class BartEnv(gym.Env):
 
                 if self.current_color in ["red", "yellow", "orange"] and \
                     self.current_size > self.current_balloon_limit:
+                    end_size = self.current_size
                     self.current_size = 0  # Balloon pops
                     reward = self.rew_on_pop
                     terminated = True
+                    popped = True
                 # elif self.current_color in ["gray", "purple"]:
                 #     if self.current_size >= 20:  # Fixed size for passive trials
                 #         self.current_size = 20
@@ -119,17 +125,31 @@ class BartEnv(gym.Env):
                     if self.current_color in ["red", "yellow", "orange"] and \
                         self.current_size > self.current_balloon_limit:
                         self.current_size = 0  # Balloon pops
+                        end_size = self.current_size
                         reward = self.rew_on_pop
                         self.currently_inflating = False
                         terminated = True
+                        popped = True
             else:
                 if action == 1:
                     self.currently_inflating = True
                     inflate = random.gauss(self.inflate_speed, self.inflate_noise)
                     self.current_size += inflate
+                else:
+                    self.inflate_delay += 1
                 
         self.prev_action = action
-        return self.get_observation(), reward, terminated, truncated, {}
+        if popped:
+            last_size = end_size
+        else:
+            last_size = self.current_size
+        info = {
+            'current_color': self.color_to_idx[self.current_color],
+            'last_size': last_size,
+            'popped': popped,
+            'inflate_delay': self.inflate_delay
+        }
+        return self.get_observation(), reward, terminated, truncated, info
     
     def get_observation(self):
         obs = np.zeros(8, dtype=np.float32)

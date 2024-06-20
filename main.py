@@ -318,14 +318,20 @@ def main():
                 if 'episode' in info.keys():
                     # This marks episode done, record to writer
                     episode_rewards.append(info['episode']['r'])
-                    print(f'global_step={global_step}, rew={info["episode"]["r"]}, len={info["episode"]["l"]}')
+                    print(f'global_step={global_step+n}, rew={info["episode"]["r"]}, len={info["episode"]["l"]}')
                     # Andy: add tensorboard writing episode returns
                     writer.add_scalar("charts/episodic_return", info["episode"]["r"], 
-                        global_step)
+                        global_step+n)
                     writer.add_scalar("charts/episodic_length", info["episode"]["l"], 
-                        global_step)
+                        global_step+n)
                     writer.add_scalar("charts/episodic_bonus_rewards", ep_bonus_reward[n])
                     
+                    # Add BART specific records
+                    if 'current_color' in info.keys():
+                        writer.add_scalar("bart/color", info['current_color'], global_step+n)
+                        writer.add_scalar("bart/size", info['last_size'], global_step+n)
+                        writer.add_scalar("bart/popped", info['popped'], global_step+n)
+                        writer.add_scalar("bart/inflate_delay", info['inflate_delay'], global_step+n)
                     ep_bonus_reward[n] = 0
 
 
