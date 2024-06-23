@@ -7,13 +7,13 @@ import random
 
 class BartEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "video.frames_per_second": 24}
-    def __init__(self, colors_used=1, hold_to_inflate=True,
+    def __init__(self, colors_used=3, toggle_task=True,
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=0,
                  pop_noise=0.05):
         """
         Action space: 3 actions
-            hold_to_inflate: if True, action 1 inflates, action 0 lets go
+            toggle_task: if True, action 1 inflates, action 0 lets go
                              if False, action 1 to start/stop, action 0 to wait
                                 Currently using same action for start/stop, could consider
                                 adding action 2 to stop
@@ -42,7 +42,7 @@ class BartEnv(gym.Env):
                              3: "gray", 4: "purple"}
         # Env setup parameters
         self.colors_used = colors_used
-        self.hold_to_inflate = hold_to_inflate
+        self.toggle_task = toggle_task
         self.give_last_action = give_last_action
         self.give_size = give_size
         
@@ -90,7 +90,7 @@ class BartEnv(gym.Env):
         end_size = 0
         reward = 0
 
-        if self.hold_to_inflate:
+        if not self.toggle_task:
             if action == 1:  # Hold inflate button
                 inflate = random.gauss(self.inflate_speed, self.inflate_noise)
                 self.current_size += inflate
