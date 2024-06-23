@@ -94,8 +94,6 @@ def get_args():
         help='value loss coefficient (default: 0.5)')
     parser.add_argument('--max-grad-norm', type=float, default=0.5,
         help='max norm of gradients (default: 0.5)')
-    parser.add_argument('--recurrent-policy', action='store_true', default=False,
-        help='use a recurrent policy')
     parser.add_argument('--use-proper-time-limits', action='store_true', default=False,
         help='compute returns taking into account time limits')
     parser.add_argument('--use-linear-lr-decay', action='store_true', default=False,
@@ -224,8 +222,5 @@ def get_args():
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
     assert args.algo in ['a2c', 'ppo', 'acktr']
-    if args.recurrent_policy:
-        assert args.algo in ['a2c', 'ppo'], \
-            'Recurrent policy is not implemented for ACKTR'
 
     return args

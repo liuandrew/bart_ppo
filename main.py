@@ -137,8 +137,7 @@ def main():
             envs.observation_space.shape,
             envs.action_space,
             base=args.nn_base,
-            base_kwargs={'recurrent': args.recurrent_policy, 
-                         **args.nn_base_kwargs})
+            base_kwargs=args.nn_base_kwargs)
         
         #Andy: if cloning parameters, do it here. We are assuming
         #that the target cloning network has the appropriate parameter
