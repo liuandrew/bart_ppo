@@ -147,7 +147,8 @@ class BartEnv(gym.Env):
             'current_color': self.color_to_idx[self.current_color],
             'last_size': last_size,
             'popped': popped,
-            'inflate_delay': self.inflate_delay
+            'inflate_delay': self.inflate_delay,
+            'balloon_limit': self.current_balloon_limit
         }
         return self.get_observation(), reward, terminated, truncated, info
     

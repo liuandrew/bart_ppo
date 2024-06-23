@@ -332,6 +332,7 @@ def main():
                         writer.add_scalar("bart/size", info['last_size'], global_step+n)
                         writer.add_scalar("bart/popped", info['popped'], global_step+n)
                         writer.add_scalar("bart/inflate_delay", info['inflate_delay'], global_step+n)
+                        writer.add_scalar("bart/balloon_limit", info['balloon_limit'], global_step+n)
                     ep_bonus_reward[n] = 0
 
 
