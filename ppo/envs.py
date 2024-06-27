@@ -125,113 +125,113 @@ def make_vec_env(env_id,
 """
 Old vec env code
 """
-def make_env(env_id, seed, rank, log_dir, allow_early_resets, capture_video=False,
-                env_kwargs=None, video_folder='./video'):
-    def _thunk():
+# def make_env(env_id, seed, rank, log_dir, allow_early_resets, capture_video=False,
+#                 env_kwargs=None, video_folder='./video'):
+#     def _thunk():
 
-        if env_id.startswith("dm"):
-            _, domain, task = env_id.split('.')
-            env = dmc2gym.make(domain_name=domain, task_name=task)
-            env = ClipAction(env)
-        else:
-            if env_kwargs is not None:
-                env = gym.make(env_id, **env_kwargs)
-            else:
-                env = gym.make(env_id)
+#         if env_id.startswith("dm"):
+#             _, domain, task = env_id.split('.')
+#             env = dmc2gym.make(domain_name=domain, task_name=task)
+#             env = ClipAction(env)
+#         else:
+#             if env_kwargs is not None:
+#                 env = gym.make(env_id, **env_kwargs)
+#             else:
+#                 env = gym.make(env_id)
                 
-        #Andy: add capture video wrapper
-        if capture_video is not False and capture_video != 0 and rank == 0:
-            # env = gym.wrappers.Monitor(env, './video', 
-            #     video_callable=lambda t:t%capture_video==0, force=True)            
-            env = gym.wrappers.RecordVideo(env, video_folder,
-                episode_trigger=lambda t:t%capture_video==0)
+#         #Andy: add capture video wrapper
+#         if capture_video is not False and capture_video != 0 and rank == 0:
+#             # env = gym.wrappers.Monitor(env, './video', 
+#             #     video_callable=lambda t:t%capture_video==0, force=True)            
+#             env = gym.wrappers.RecordVideo(env, video_folder,
+#                 episode_trigger=lambda t:t%capture_video==0)
 
-        is_atari = hasattr(gym.envs, 'atari') and isinstance(
-            env.unwrapped, gym.envs.atari.atari_env.AtariEnv)
-        if is_atari:
-            env = NoopResetEnv(env, noop_max=30)
-            env = MaxAndSkipEnv(env, skip=4)
+#         is_atari = hasattr(gym.envs, 'atari') and isinstance(
+#             env.unwrapped, gym.envs.atari.atari_env.AtariEnv)
+#         if is_atari:
+#             env = NoopResetEnv(env, noop_max=30)
+#             env = MaxAndSkipEnv(env, skip=4)
 
-        # env.seed(seed + rank)
+#         # env.seed(seed + rank)
 
-        if str(env.__class__.__name__).find('TimeLimit') >= 0:
-            env = TimeLimitMask(env)
+#         if str(env.__class__.__name__).find('TimeLimit') >= 0:
+#             env = TimeLimitMask(env)
 
-        # Monitor somehow breaks the vec environments and causes the VecNormamlize
-        #  to not recognize the observation_space as the correct type, so turning off
-        #  since we don't use it
+#         # Monitor somehow breaks the vec environments and causes the VecNormamlize
+#         #  to not recognize the observation_space as the correct type, so turning off
+#         #  since we don't use it
         
-        # if log_dir is not None:
-        #     env = Monitor(env,
-        #                   os.path.join(log_dir, str(rank)),
-        #                   allow_early_resets=allow_early_resets)
+#         # if log_dir is not None:
+#         #     env = Monitor(env,
+#         #                   os.path.join(log_dir, str(rank)),
+#         #                   allow_early_resets=allow_early_resets)
 
-        if is_atari:
-            if len(env.observation_space.shape) == 3:
-                env = EpisodicLifeEnv(env)
-                if "FIRE" in env.unwrapped.get_action_meanings():
-                    env = FireResetEnv(env)
-                env = WarpFrame(env, width=84, height=84)
-                env = ClipRewardEnv(env)
-        elif len(env.observation_space.shape) == 3:
-            raise NotImplementedError(
-                "CNN models work only for atari,\n"
-                "please use a custom wrapper for a custom pixel input env.\n"
-                "See wrap_deepmind for an example.")
+#         if is_atari:
+#             if len(env.observation_space.shape) == 3:
+#                 env = EpisodicLifeEnv(env)
+#                 if "FIRE" in env.unwrapped.get_action_meanings():
+#                     env = FireResetEnv(env)
+#                 env = WarpFrame(env, width=84, height=84)
+#                 env = ClipRewardEnv(env)
+#         elif len(env.observation_space.shape) == 3:
+#             raise NotImplementedError(
+#                 "CNN models work only for atari,\n"
+#                 "please use a custom wrapper for a custom pixel input env.\n"
+#                 "See wrap_deepmind for an example.")
 
-        # If the input has shape (W,H,3), wrap for PyTorch convolutions
-        obs_shape = env.observation_space.shape
-        if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
-            env = TransposeImage(env, op=[2, 0, 1])
+#         # If the input has shape (W,H,3), wrap for PyTorch convolutions
+#         obs_shape = env.observation_space.shape
+#         if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
+#             env = TransposeImage(env, op=[2, 0, 1])
 
-        return env
+#         return env
 
-    return _thunk
+#     return _thunk
 
-#Andy: add capture video param, add optional env kwargs
-def make_vec_envs(env_name,
-                  seed=None,
-                  num_processes=1,
-                  gamma=0.99,
-                  log_dir=None,
-                  device=torch.device('cpu'),
-                  allow_early_resets=True,
-                  num_frame_stack=None,
-                  capture_video=False,
-                  normalize=True,
-                  env_kwargs={},
-                  auxiliary_tasks=[],
-                  auxiliary_task_args=[],
-                  video_folder='./video'):
-    if seed is None:
-        seed = np.random.randint(0, 1e9)
+# #Andy: add capture video param, add optional env kwargs
+# def make_vec_envs(env_name,
+#                   seed=None,
+#                   num_processes=1,
+#                   gamma=0.99,
+#                   log_dir=None,
+#                   device=torch.device('cpu'),
+#                   allow_early_resets=True,
+#                   num_frame_stack=None,
+#                   capture_video=False,
+#                   normalize=True,
+#                   env_kwargs={},
+#                   auxiliary_tasks=[],
+#                   auxiliary_task_args=[],
+#                   video_folder='./video'):
+#     if seed is None:
+#         seed = np.random.randint(0, 1e9)
         
-    envs = [
-        make_env(env_name, seed, i, log_dir, allow_early_resets, capture_video,
-            env_kwargs, video_folder)
-        for i in range(num_processes)
-    ]
+#     envs = [
+#         make_env(env_name, seed, i, log_dir, allow_early_resets, capture_video,
+#             env_kwargs, video_folder)
+#         for i in range(num_processes)
+#     ]
 
-    if len(envs) > 1:
-        envs = SubprocVecEnv(envs)
-    else:
-        envs = DummyVecEnv(envs)
+#     if len(envs) > 1:
+#         envs = SubprocVecEnv(envs)
+#     else:
+#         envs = DummyVecEnv(envs)
 
-    if len(envs.observation_space.shape) == 1 and normalize:
-        if gamma is None:
-            envs = VecNormalize(envs, norm_reward=False)
-        else:
-            envs = VecNormalize(envs, gamma=gamma)
+#     if len(envs.observation_space.shape) == 1 and normalize:
+#         if gamma is None:
+#             envs = VecNormalize(envs, norm_reward=False)
+#         else:
+#             envs = VecNormalize(envs, gamma=gamma)
 
-    # envs = VecPyTorch(envs, device)
-    envs = AuxVecPyTorch(envs, device, auxiliary_tasks, auxiliary_task_args)
+#     # envs = VecPyTorch(envs, device)
+#     envs = AuxVecPyTorch(envs, device, auxiliary_tasks, auxiliary_task_args)
 
-    if num_frame_stack is not None:
-        envs = VecPyTorchFrameStack(envs, num_frame_stack, device)
-    elif len(envs.observation_space.shape) == 3:
-        envs = VecPyTorchFrameStack(envs, 4, device)
+#     if num_frame_stack is not None:
+#         envs = VecPyTorchFrameStack(envs, num_frame_stack, device)
+#     elif len(envs.observation_space.shape) == 3:
+#         envs = VecPyTorchFrameStack(envs, 4, device)
 
-    return envs
+#     return envs
 
 
 # Checks whether done was caused my timit limits or not

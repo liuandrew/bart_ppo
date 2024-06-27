@@ -10,15 +10,18 @@ bart_plot_colors = {0: 'deep red',
                     1: 'orange', 
                     2: 'goldenrod'}
 
-def plot_bart_behaviors(df, metrics=['size', 'popped']):
+def plot_bart_behaviors(df, metrics=['size', 'popped'], ax=None,
+                        alpha=1.0):
     colors = [0, 1, 2]
     bart_metrics = {
         'size': {'df_metric': 'bart/size', 'label': 'Inflation size'},
-        'popped': {'df_metric': 'bart/popped', 'label': 'Popped rate'}
+        'popped': {'df_metric': 'bart/popped', 'label': 'Popped rate'},
+        'rt': {'df_metric': 'bart/inflate_delay', 'label': 'Reaction time'}
     }
 
-    fig, ax = pplt.subplots(nrows=len(metrics), ncols=len(colors), 
-                            figwidth=6)
+    if ax is None:
+        fig, ax = pplt.subplots(nrows=len(metrics), ncols=len(colors), 
+                                figwidth=6)
 
     metric_df = df.set_index(['metric', 'step'])
     color_df = metric_df.loc['bart/color']
@@ -30,5 +33,6 @@ def plot_bart_behaviors(df, metrics=['size', 'popped']):
             plot_metric = metric_df.loc[df_metric][color_df['value'] == color]
             ax[i, j].plot(plot_metric.index, 
                         plot_metric.value.ewm(alpha=0.01).mean(),
-                        c=bart_plot_colors[j])
+                        c=bart_plot_colors[j], alpha=alpha)
     ax.format(leftlabels=leftlabels, ylabel='')
+    return ax

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from ppo import utils
-from ppo.envs import make_vec_envs
+from ppo.envs import make_vec_env
 
 
 def evaluate(actor_critic, obs_rms=None, normalize=True, env_name='NavEnv-v0', seed=None, num_processes=1,
@@ -34,7 +34,7 @@ def evaluate(actor_critic, obs_rms=None, normalize=True, env_name='NavEnv-v0', s
     if seed is None:
         seed = np.random.randint(0, 1e9)
 
-    envs = make_vec_envs(env_name, seed + num_processes, num_processes,
+    envs = make_vec_env(env_name, seed + num_processes, num_processes,
                               None, eval_log_dir, device, True, 
                               capture_video=capture_video, 
                               env_kwargs=env_kwargs, normalize=normalize,
@@ -319,7 +319,8 @@ def simple_vec_envs(obs_rms=None, env_name='NavEnv-v0', normalize=True, seed=Non
         #If obs_rms is not given, make it a learning normalize vector envs
         pass
     else:
-        vec_norm.eval()
+        # vec_norm.eval()
+        vec_norm.training = False
         vec_norm.obs_rms = obs_rms
         
     return envs
