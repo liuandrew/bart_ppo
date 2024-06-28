@@ -144,8 +144,13 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
             ep_obs.append(obs)
             ep_rnn_hxs.append(rnn_hxs)
             if data_callback is not None and step == 0:
-                data = data_callback(None, envs, rnn_hxs,
-                    obs, [], [], [False], data, first=True)
+                data_inputs = {
+                    'model': actor_critic,
+                    'envs': envs,
+                    'rnn_hxs': rnn_hxs,
+                    'obs': obs,
+                }
+                data = data_callback(data_inputs, data, first=True)
 
             with torch.no_grad():
                 outputs = actor_critic.act(obs, rnn_hxs, 
@@ -194,10 +199,17 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
                 ep_activations.append(outputs['activations'])
 
             if data_callback is not None:
-                data = data_callback(None, envs, rnn_hxs,
-                    obs, action, reward, done, data)
-            else:
-                data = {}
+                data_inputs = {
+                    'model': actor_critic,
+                    'envs': envs,
+                    'rnn_hxs': rnn_hxs,
+                    'obs': obs,
+                    'action': action,
+                    'reward': reward,
+                    'done': done,
+                    'info': infos,
+                }
+                data = data_callback(data_inputs, data)
             
             auxiliary_truths = [[] for i in range(len(actor_critic.auxiliary_output_sizes))]
             if with_aux:
@@ -208,15 +220,6 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
                 if len(auxiliary_truths) > 0:
                     auxiliary_truths = [torch.tensor(np.vstack(aux)) for aux in auxiliary_truths]
             ep_auxiliary_truths.append(auxiliary_truths)
-            
-            
-            # for info in infos:
-            #     if 'episode' in info.keys():
-            #         eval_episode_rewards.append(info['episode']['r'])
-            #         #Andy: add verbosity option
-            #         if verbose >= 2:
-            #             print('ep ' + str(len(eval_episode_rewards)) + ' rew ' + \
-            #                 str(info['episode']['r']))
             
             step += 1
             
@@ -237,8 +240,11 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
                 all_auxiliary_truths.append(ep_auxiliary_truths)
 
                 if data_callback is not None:
-                    data = data_callback(None, envs, rnn_hxs,
-                        obs, action, reward, done, data, stack=True)
+                    data_inputs = {
+                        'model': actor_critic,
+                        'envs': envs
+                    }
+                    data = data_callback(data_inputs, data, stack=True)
                           
                 if verbose >= 2:
                     print(f'ep {i}, rew {np.sum(ep_rewards)}' )
@@ -284,6 +290,42 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
         'auxiliary_truths': all_auxiliary_truths,
     }
 
+
+
+'''
+================================================================
+Data Callbacks
+================================================================
+'''
+def bart_toggle_data_callback(data_inputs={}, data={}, first=False, stack=False):
+    '''
+    Track some bart toggle task information
+    
+    data_inputs: may have model, envs, rnn_hxs, obs, action, reward, done, info
+    data: currently tracked data dictionary, fill it up in this function with passed inputs
+    first: called on the first step of every reset, only passses model, envs, 
+        rnn_hxs (zeros) and first obs
+    stack: final call after episode is done, only passes model and envs. If collecting data
+        per step, this is the step where it can be stacked and stored as an episode of data
+    '''
+    if len(data) == 0:
+        data['color'] = []
+        data['end_size'] = []
+        data['popped'] = []
+        data['inflate_delay'] = []
+        data['balloon_limit'] = []
+    
+    if 'done' in data_inputs and data_inputs['done']:
+        info = data_inputs['info'][0]
+        data['color'].append(info['current_color'])
+        data['end_size'].append(info['last_size'])
+        data['popped'].append(info['popped'])
+        data['inflate_delay'].append(info['inflate_delay'])
+        data['balloon_limit'].append(info['balloon_limit'])
+        
+    return data
+
+    
 '''
 ================================================================
 Load checkpoint functions
@@ -481,130 +523,8 @@ def animate_episode(ep_num=0, trajectory=False):
     # fig = plt.figure()
     return HTML(anim.to_html5_video())
 
-
     
-
-def nav_data_callback(actor_critic, vec_envs, recurrent_hidden_states,
-                                  obs, action, reward, done, data):
-    if data == {}:
-        data['pos'] = []
-        data['angle'] = []
-    
-    pos = [c.pos.copy() for c in vec_envs.get_attr('character')]
-    angle = [c.angle for c in vec_envs.get_attr('character')]
-    data['pos'].append(pos)
-    data['angle'].append(angle)
-    
-    return data
         
-def poster_data_callback(actor_critic, vec_envs, recurrent_hidden_states,
-                                  obs, action, reward, done, data):
-    if data == {}:
-        data['pos'] = []
-        data['angle'] = []
-        data['poster_seen'] = []
-        data['poster_in_view'] = []
-    
-    pos = vec_envs.get_attr('character')[0].pos.copy()
-    angle = vec_envs.get_attr('character')[0].angle
-    data['pos'].append(pos)
-    data['angle'].append(angle)
-    
-    #Check whether poster has been seen yet
-    done = done[0]
-    true_obs = vec_envs.get_attr('env')[0].get_observation()
-    poster_in_view = False
-    if (true_obs == 4/6).any(): #Poster in view
-        poster_in_view = True
-        
-    data['poster_in_view'].append(poster_in_view)
-    
-    if done == False:
-        # print('continue ep')
-        # print()
-        if len(data['poster_seen']) > 0 and data['poster_seen'][-1] == True:
-            # print(data['poster_seen'][-1])
-            data['poster_seen'].append(True)
-        else:
-            data['poster_seen'].append(poster_in_view)
-    else:
-        # print('new ep')
-        if poster_in_view:
-            data['poster_seen'].append(True)
-        else:
-            data['poster_seen'].append(False)
-        
-        
-        
-    # if len(data['poster_seen']) > 0 and data['poster_seen'][-1] == True and done == False:
-    #     data['poster_seen'].append(True)
-    # else:
-    #     true_obs = vec_envs.get_attr('env')[0].get_observation()
-    #     if (true_obs == 4/6).any(): #Poster in view
-    #         data['poster_seen'].append(True)
-    #     else:
-    #         data['poster_seen'].append(False)
-    
-    return data
-    
-    
-    
-    
-def data_callback(actor_critic, vec_envs, recurrent_hidden_states, 
-                  obs, action, reward, done, data):
-    """Example of a data callback, this basic one is intended
-    for 'GridNav-v0'. We take these arguments and can perform
-    evaluations on them to collect data during episodes
-
-    Args:
-        These arguments will always be passed by the evaluation
-        function (evaluation.py)
-        data: we pass in the previous dictionary of data
-
-    Returns:
-        data: pass back updated dictionary of data
-    """
-    # Initialize the data dictionary if it has not been initialized yet
-    if data == {}:
-        data['goal'] = []
-        data['agent'] = []
-        data['facing_goal'] = []
-        data['dist_from_goal'] = []
-    
-    agent = vec_envs.get_attr('character')[0]
-    objects = vec_envs.get_attr('objects')[0]
-    
-    goal_y = (objects == 2).argmax(axis=0).max()
-    goal_x = (objects == 2).argmax(axis=1).max()
-    data['goal'].append([goal_y, goal_x])
-    
-    #check if agent is facing the goal
-    correct_directions = np.array([False, False, False, False])
-    if goal_y > agent[0][0]:
-        correct_directions[1] = True
-    if goal_y < agent[0][0]:
-        correct_directions[3] = True
-    if goal_x > agent[0][1]:
-        correct_directions[0] = True
-    if goal_x < agent[0][1]:
-        correct_directions[2] = True
-    
-    if correct_directions[agent[1]]:
-        data['facing_goal'].append(True)
-    else:
-        data['facing_goal'].append(False)
-        
-        
-    dist_from_goal = np.abs(goal_y - agent[0][0]) + np.abs(goal_x - agent[0][1])
-    data['dist_from_goal'].append(dist_from_goal)
-    # vec_envs.env_method('render')
-    
-    data['agent'].append(agent.copy())
-    
-    return data
-
-    
-    
 def get_activations(model, results):
     """
     OBSOLETE: evalu can now collect activations during episode
