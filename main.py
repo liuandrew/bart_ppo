@@ -219,6 +219,11 @@ def main():
     rollouts.to(device)
 
     episode_rewards = deque(maxlen=10)
+
+    verbose_rewards = deque(maxlen=args.ep_verbosity)
+    verbose_lens = deque(maxlen=args.ep_verbosity)
+    finished_eps = 0
+    
     ep_bonus_reward = [0]*args.num_processes
     
     universal_step_reset_point = 0
@@ -317,7 +322,11 @@ def main():
                 if 'episode' in info.keys():
                     # This marks episode done, record to writer
                     episode_rewards.append(info['episode']['r'])
-                    print(f'global_step={global_step+n}, rew={info["episode"]["r"]}, len={info["episode"]["l"]}')
+                    verbose_rewards.append(info['episode']['r'])
+                    verbose_lens.append(info['episode']['l'])
+                    finished_eps += 1
+                    if finished_eps % args.ep_verbosity == 0:
+                        print(f'global_step={global_step+n}, rew={np.mean(verbose_rewards)}, len={np.mean(verbose_lens)}')
                     # Andy: add tensorboard writing episode returns
                     writer.add_scalar("charts/episodic_return", info["episode"]["r"], 
                         global_step+n)

@@ -170,7 +170,7 @@ def get_args():
         help='if toggled, attempt to load a model as named from save_path under the right folder to continue experiment')
     parser.add_argument('--cont-file-name', type=str, default=None,
         help='if given, try to load a specific file')
-    
+    parser.add_argument('--ep-verbosity', type=int, default=1, help='how often to print ep results')
     #Andy: add options for using a custom NN base for policy
     parser.add_argument('--nn-base', type=str, default=None,
         help='pass a string to use a specific NNBase from model.py, e.g. FlexBase')
