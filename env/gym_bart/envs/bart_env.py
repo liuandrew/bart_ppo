@@ -10,7 +10,7 @@ class BartEnv(gym.Env):
     def __init__(self, colors_used=3, toggle_task=True,
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=0,
-                 pop_noise=0.05):
+                 pop_noise=0.05, max_steps=200):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -45,7 +45,8 @@ class BartEnv(gym.Env):
         self.toggle_task = toggle_task
         self.give_last_action = give_last_action
         self.give_size = give_size
-        
+        self.max_steps = max_steps
+
         # Tweak parameters
         self.inflate_speed = inflate_speed
         self.inflate_noise = inflate_noise
@@ -53,6 +54,7 @@ class BartEnv(gym.Env):
         self.pop_noise = pop_noise
 
         self.inflate_delay = 0
+        self.current_step = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Current size
@@ -74,6 +76,7 @@ class BartEnv(gym.Env):
         self.current_size = 0.0
         self.prev_action = 0
         self.inflate_delay = 0
+        self.current_step = 0
 
         self.currently_inflating = False # used for stop/start version
         
@@ -137,12 +140,21 @@ class BartEnv(gym.Env):
                     self.current_size += inflate
                 else:
                     self.inflate_delay += 1
-                
+
         self.prev_action = action
         if popped:
             last_size = end_size
         else:
             last_size = self.current_size
+            
+        # Note on max step termination, we will still give current size worth of points
+        #   since this might better allow for reaction time in meta environment
+        self.current_step += 1
+        if self.current_step >= self.max_steps:
+            if not popped:
+                reward = self.current_size
+            terminated = True
+            
         info = {
             'current_color': self.color_to_idx[self.current_color],
             'last_size': last_size,

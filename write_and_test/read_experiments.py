@@ -25,7 +25,7 @@ import torch.optim as optim
 from ppo import algo, utils
 from ppo.algo import gail
 from ppo.arguments import get_args
-from ppo.envs import make_vec_envs
+from ppo.envs import make_vec_env
 from ppo.model import Policy
 from ppo.storage import RolloutStorage
 from evaluation import evaluate

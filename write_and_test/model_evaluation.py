@@ -281,7 +281,7 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
         'rnn_hxs': all_rnn_hxs,
         'dones': all_dones,
         'masks': all_masks,
-        'envs': envs,
+        # 'envs': envs,
         'data': data,
         'activations': all_activations,
         'values': all_values,
