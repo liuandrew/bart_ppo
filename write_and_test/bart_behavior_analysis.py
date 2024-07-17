@@ -6,9 +6,9 @@ import numpy as np
 
 pplt.rc.update({'font.size': 10})
 
-color_to_idx = {"red": 0, "yellow": 1, "orange": 2,
+color_to_idx = {"red": 0, "orange": 1, "yellow": 2,
                         "gray": 4, "purple": 4}
-idx_to_color = {0: "red", 1: "yellow", 2: "orange",
+idx_to_color = {0: "red", 1: "orange", 2: "yellow",
                             3: "gray", 4: "purple"}
 bart_plot_colors = {0: 'deep red', 
                     1: 'orange', 
