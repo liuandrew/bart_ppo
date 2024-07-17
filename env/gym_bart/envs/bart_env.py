@@ -31,14 +31,14 @@ class BartEnv(gym.Env):
 
         self.colors = {
             "red": {"mean": 0.2},
-            "yellow": {"mean": 0.5},
-            "orange": {"mean": 0.8},
+            "orange": {"mean": 0.5},
+            "yellow": {"mean": 0.8},
             "gray": {"fixed_reward": 0},
             "purple": {"fixed_reward": 1}
         }
-        self.color_to_idx = {"red": 0, "yellow": 1, "orange": 2,
+        self.color_to_idx = {"red": 0, "orange": 1, "yellow": 2,
                              "gray": 3, "purple": 4}
-        self.idx_to_color = {0: "red", 1: "yellow", 2: "orange",
+        self.idx_to_color = {0: "red", 1: "orange", 2: "yellow",
                              3: "gray", 4: "purple"}
         # Env setup parameters
         self.colors_used = colors_used
