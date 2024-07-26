@@ -91,7 +91,12 @@ def get_bart_res_eps(
     return filtered_res
 
     
-def plot_3color_it_rt(res, metrics=['size', 'rt'], ax=None):
+def plot_3color_it_rt(res, metrics=['size', 'rt'], ax=None, ep_num=None):
+    '''
+    Plot main characterics of a single evaluation of bart trials
+    Available metrics to pass in for plotting:
+        'size'/'rt'/'popped'
+    '''
     colors = np.array(res['data']['color'])
     end_size = np.array(res['data']['end_size'])
     popped = np.array(res['data']['popped'])
@@ -114,8 +119,46 @@ def plot_3color_it_rt(res, metrics=['size', 'rt'], ax=None):
             elif metric == 'rt':
                 ax[i, j].hist(reaction_times[colors == j], c=bart_plot_colors[j])
             elif metric == 'popped':
-                p = np.array(res['data']['popped']).sum()
-                not_p = (~np.array(res['data']['popped'])).sum()
+                p = np.array(popped).sum()
+                not_p = (~popped).sum()
+                ax[i, j].bar([0, 1], [p, not_p], width=0.5, c=bart_plot_colors[j])
+                ax[i, :].format(xformatter=['Popped', 'Not Popped'], xlocator=range(2))
+                
+    return ax
+
+
+def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
+    '''
+    Plot main characterics of a single evaluation of bart trials
+    Available metrics to pass in for plotting:
+        'size'/'rt'/'popped'
+
+    ep_num: which episode to plot from a set of meta bart trials
+    '''
+    colors = np.array(res['data']['current_color'][0])
+    end_size = np.array(res['data']['last_size'][0])
+    popped = np.array(res['data']['popped'][0])
+    reaction_times = np.array(res['data']['inflate_delay'][0])
+
+    metric_to_label = {
+        'size': 'Inflation Times',
+        'rt': 'Reaction Times',
+        'popped': 'Popped Count'
+    }
+
+    if ax is None:
+        fig, ax = pplt.subplots(nrows=len(metrics), ncols=3, 
+                                figwidth=6, sharex=False)
+        ax.format(leftlabels=[metric_to_label[metric] for metric in metrics])
+    for i, metric in enumerate(metrics):
+        for j in range(3):
+            if metric == 'size':
+                ax[i, j].hist(end_size[colors == j], c=bart_plot_colors[j])
+            elif metric == 'rt':
+                ax[i, j].hist(reaction_times[colors == j], c=bart_plot_colors[j])
+            elif metric == 'popped':
+                p = popped.sum()
+                not_p = (~popped).sum()
                 ax[i, j].bar([0, 1], [p, not_p], width=0.5, c=bart_plot_colors[j])
                 ax[i, :].format(xformatter=['Popped', 'Not Popped'], xlocator=range(2))
                 

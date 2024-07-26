@@ -325,6 +325,26 @@ def bart_toggle_data_callback(data_inputs={}, data={}, first=False, stack=False)
         
     return data
 
+def meta_bart_callback(data_inputs={}, data={}, first=False, stack=False):
+    keys = ['current_color', 'last_size', 'balloon_limit', 'inflate_delay', 'popped']
+    
+    if len(data) == 0:
+        for key in keys:
+            data[key] = []
+            data[f'ep_{key}'] = []
+        
+    if 'info' in data_inputs:
+        info = data_inputs['info'][0]
+        if 'bart_finished' in info and info['bart_finished']:
+            for key in keys:
+                data[f'ep_{key}'].append(info[key])
+        
+        if 'done' in data_inputs and data_inputs['done']:
+            for key in keys:
+                data[key].append(data[f'ep_{key}'])
+                data[f'ep_{key}'] = []
+
+    return data
     
 '''
 ================================================================
