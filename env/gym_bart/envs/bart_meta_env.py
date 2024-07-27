@@ -108,7 +108,9 @@ class BartMetaEnv(gym.Env):
         if self.colors_used <= 1:
             self.current_color = "yellow"
         else:
-            self.current_color = self.idx_to_color[random.choice(range(self.colors_used))]
+            self.current_color_idx = random.choice(range(self.colors_used))
+            self.current_color = self.idx_to_color[self.current_color_idx]
+        
         self.current_size = 0.0
         self.prev_action = 0
         self.inflate_delay = 0
@@ -116,7 +118,7 @@ class BartMetaEnv(gym.Env):
         self.currently_inflating = False # used for stop/start version
         
         # Pick a pop size
-        mean = self.colors[self.current_color]["mean"]
+        mean = self.balloon_mean_sizes[self.current_color_idx]
         self.current_balloon_limit = random.gauss(mean, self.pop_noise)
         
         return self.get_observation()
