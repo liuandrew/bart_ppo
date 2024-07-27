@@ -21,6 +21,10 @@ from scipy.ndimage import gaussian_filter
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
 
+# Turn noff logging warnings for gymnasium on get_attr() being deprecated
+import logging
+logging.getLogger('gymnasium').setLevel(logging.CRITICAL)
+
 device = torch.device("cpu")
 
 save_folder = 'plots/proof_of_concept/'
@@ -327,11 +331,13 @@ def bart_toggle_data_callback(data_inputs={}, data={}, first=False, stack=False)
 
 def meta_bart_callback(data_inputs={}, data={}, first=False, stack=False):
     keys = ['current_color', 'last_size', 'balloon_limit', 'inflate_delay', 'popped']
+    # print(data_inputs)
     
     if len(data) == 0:
+        data['balloon_means'] = []
         for key in keys:
             data[key] = []
-            data[f'ep_{key}'] = []
+            data[f'ep_{key}'] = []    
         
     if 'info' in data_inputs:
         info = data_inputs['info'][0]
@@ -343,6 +349,9 @@ def meta_bart_callback(data_inputs={}, data={}, first=False, stack=False):
             for key in keys:
                 data[key].append(data[f'ep_{key}'])
                 data[f'ep_{key}'] = []
+            data['balloon_means'].append(
+                data_inputs['envs'].get_attr('balloon_mean_sizes')[0]
+            )
 
     return data
     

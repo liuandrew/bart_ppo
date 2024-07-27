@@ -135,10 +135,10 @@ def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
 
     ep_num: which episode to plot from a set of meta bart trials
     '''
-    colors = np.array(res['data']['current_color'][0])
-    end_size = np.array(res['data']['last_size'][0])
-    popped = np.array(res['data']['popped'][0])
-    reaction_times = np.array(res['data']['inflate_delay'][0])
+    colors = np.array(res['data']['current_color'][ep_num])
+    end_size = np.array(res['data']['last_size'][ep_num])
+    popped = np.array(res['data']['popped'][ep_num])
+    reaction_times = np.array(res['data']['inflate_delay'][ep_num])
 
     metric_to_label = {
         'size': 'Inflation Times',
@@ -150,10 +150,16 @@ def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
         fig, ax = pplt.subplots(nrows=len(metrics), ncols=3, 
                                 figwidth=6, sharex=False)
         ax.format(leftlabels=[metric_to_label[metric] for metric in metrics])
+    
     for i, metric in enumerate(metrics):
+        max_height = 0
+        
         for j in range(3):
             if metric == 'size':
-                ax[i, j].hist(end_size[colors == j], c=bart_plot_colors[j])
+                ax[i, :].format(xlim=[0, 1])
+                counts, _, _ = ax[i, j].hist(end_size[colors == j], c=bart_plot_colors[j], bins=40,
+                                             range=[0, 1])
+                max_height = max(max_height, np.max(counts))
             elif metric == 'rt':
                 ax[i, j].hist(reaction_times[colors == j], c=bart_plot_colors[j])
             elif metric == 'popped':
@@ -161,5 +167,10 @@ def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
                 not_p = (~popped).sum()
                 ax[i, j].bar([0, 1], [p, not_p], width=0.5, c=bart_plot_colors[j])
                 ax[i, :].format(xformatter=['Popped', 'Not Popped'], xlocator=range(2))
-                
+        if metric == 'size':
+            for j in range(3):
+                balloon_mean = res['data']['balloon_means'][ep_num][j]
+                # print([balloon_mean, balloon_mean])
+                # print([0, max_height])
+                ax[i, j].plot([balloon_mean, balloon_mean], [0, max_height])
     return ax

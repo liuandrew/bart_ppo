@@ -176,10 +176,6 @@ class BartMetaEnv(gym.Env):
         else:
             last_size = self.current_size
             
-        if finished:
-            next_obs = self.inner_reset()
-        else:
-            next_obs = self.get_observation()
         # Note on max step termination, we will still give current size worth of points
         #   since this might better allow for reaction time in meta environment
         self.current_step += 1
@@ -196,6 +192,12 @@ class BartMetaEnv(gym.Env):
             'inflate_delay': self.inflate_delay,
             'balloon_limit': self.current_balloon_limit
         }
+
+        if finished:
+            next_obs = self.inner_reset()
+        else:
+            next_obs = self.get_observation()
+
         return next_obs, reward, terminated, truncated, info
     
     def get_observation(self):
