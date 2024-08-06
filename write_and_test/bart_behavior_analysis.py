@@ -3,6 +3,7 @@ import proplot as pplt
 from typing import Union
 import itertools
 import numpy as np
+import pandas as pd
 
 pplt.rc.update({'font.size': 10})
 
@@ -127,7 +128,7 @@ def plot_3color_it_rt(res, metrics=['size', 'rt'], ax=None, ep_num=None):
     return ax
 
 
-def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
+def plot_3color_meta_ep(res, metrics=['size', 'rt', 'popped'], ax=None, ep_num=0):
     '''
     Plot main characterics of a single evaluation of bart trials
     Available metrics to pass in for plotting:
@@ -163,8 +164,8 @@ def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
             elif metric == 'rt':
                 ax[i, j].hist(reaction_times[colors == j], c=bart_plot_colors[j])
             elif metric == 'popped':
-                p = popped.sum()
-                not_p = (~popped).sum()
+                p = popped[colors == j].sum()
+                not_p = (~popped[colors == j]).sum()
                 ax[i, j].bar([0, 1], [p, not_p], width=0.5, c=bart_plot_colors[j])
                 ax[i, :].format(xformatter=['Popped', 'Not Popped'], xlocator=range(2))
         if metric == 'size':
@@ -174,3 +175,100 @@ def plot_3color_meta_ep(res, metrics=['size', 'rt'], ax=None, ep_num=0):
                 # print([0, max_height])
                 ax[i, j].plot([balloon_mean, balloon_mean], [0, max_height])
     return ax
+
+
+def plot_meta_it_progression(res, metrics=['size', 'rt', 'popped'], ax=None, ep_num=0):
+    '''
+    Plot main characterics of a single evaluation of bart trials
+    Available metrics to pass in for plotting:
+        'size'/'rt'/'popped'
+
+    ep_num: which episode to plot from a set of meta bart trials
+    '''
+    colors = np.array(res['data']['current_color'][ep_num])
+    end_size = np.array(res['data']['last_size'][ep_num])
+    popped = np.array(res['data']['popped'][ep_num])
+    reaction_times = np.array(res['data']['inflate_delay'][ep_num])
+
+    metric_to_label = {
+        'size': 'Inflation Times',
+        'rt': 'Reaction Times',
+        'popped': 'Popped Count'
+    }
+
+    if ax is None:
+        fig, ax = pplt.subplots(nrows=len(metrics), ncols=3, 
+                                figwidth=6, sharex=False)
+        ax.format(leftlabels=[metric_to_label[metric] for metric in metrics])
+    
+    for i, metric in enumerate(metrics):
+        for j in range(3):
+            if metric == 'size':
+                ax[i, :].format(ylim=[0, 1])
+                its = end_size[colors == j]
+                smoothed_its = pd.Series(its).ewm(alpha=0.1).mean()
+                ax[i, j].scatter(range(len(its)), its, c=bart_plot_colors[j], alpha=0.2)
+                ax[i, j].plot(range(len(its)), smoothed_its, c=bart_plot_colors[j], linewidth=2)
+                balloon_mean = res['data']['balloon_means'][ep_num][j]
+                ax[i, j].plot([0, len(its)], [balloon_mean, balloon_mean])
+            elif metric == 'rt':
+                rts = reaction_times[colors == j]
+                ax[i, j].scatter(range(len(rts)), rts, c=bart_plot_colors[j])
+            elif metric == 'popped':
+                p = popped[colors==j]*1
+                ax[i, j].scatter(range(len(p)), p, c=bart_plot_colors[j])
+                ax[i, :].format(yformatter=['Not Popped', 'Popped'], ylocator=range(2))
+                
+
+
+def get_meta_mean_diffs(res):
+    num_eps = len(res['data']['current_color'])
+    all_diffs = []
+
+    for ep_num in range(num_eps):
+        ep_diffs = []
+        
+        colors = np.array(res['data']['current_color'][ep_num])
+        end_size = np.array(res['data']['last_size'][ep_num])
+        popped = np.array(res['data']['popped'][ep_num])
+        
+        unpopped_its = end_size[~popped]
+        unpopped_colors = colors[~popped]
+        
+        balloon_means = res['data']['balloon_means'][ep_num]
+        
+        for j in range(3):
+            it_mean = unpopped_its[unpopped_colors == j].mean()
+            mean_diff = abs(balloon_means[j] - it_mean)
+            ep_diffs.append(mean_diff)
+        all_diffs.append(ep_diffs)
+    
+    return all_diffs
+
+
+
+def get_meta_fixed_mean_diff(res):
+    num_eps = len(res['data']['current_color'])
+    all_means = []
+
+    for ep_num in range(num_eps):
+        ep_means = []
+        
+        colors = np.array(res['data']['current_color'][ep_num])
+        end_size = np.array(res['data']['last_size'][ep_num])
+        popped = np.array(res['data']['popped'][ep_num])
+        
+        unpopped_its = end_size[~popped]
+        unpopped_colors = colors[~popped]
+        
+        balloon_means = res['data']['balloon_means'][ep_num]
+        
+        for j in range(3):
+            it_mean = unpopped_its[unpopped_colors == j].mean()
+            ep_means.append(it_mean)
+        all_means.append(ep_means)
+    
+    all_means = np.array(all_means)
+    mean_diff = np.abs(all_means - all_means.mean(axis=0))
+    
+    return mean_diff, all_means

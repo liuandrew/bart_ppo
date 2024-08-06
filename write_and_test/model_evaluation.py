@@ -335,12 +335,18 @@ def meta_bart_callback(data_inputs={}, data={}, first=False, stack=False):
     
     if len(data) == 0:
         data['balloon_means'] = []
+        data['ep_balloon_means'] = []
         for key in keys:
             data[key] = []
             data[f'ep_{key}'] = []    
         
     if 'info' in data_inputs:
         info = data_inputs['info'][0]
+        if len(data['ep_balloon_means']) == 0:
+            data['ep_balloon_means'].append(
+                data_inputs['envs'].get_attr('balloon_mean_sizes')[0]
+            )
+        
         if 'bart_finished' in info and info['bart_finished']:
             for key in keys:
                 data[f'ep_{key}'].append(info[key])
@@ -350,8 +356,9 @@ def meta_bart_callback(data_inputs={}, data={}, first=False, stack=False):
                 data[key].append(data[f'ep_{key}'])
                 data[f'ep_{key}'] = []
             data['balloon_means'].append(
-                data_inputs['envs'].get_attr('balloon_mean_sizes')[0]
+                data['ep_balloon_means'][0]
             )
+            data['ep_balloon_means'] = []
 
     return data
     
