@@ -9,8 +9,8 @@ class BartMetaEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "video.frames_per_second": 24}
     def __init__(self, colors_used=3, toggle_task=True,
                  give_last_action=True, give_size=True,
-                 inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=0,
-                 pop_noise=0.05, max_steps=2000, meta_setup=0):
+                 inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=None,
+                 pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -30,6 +30,12 @@ class BartMetaEnv(gym.Env):
             meta_setup:
                 0: set balloon mean sizes to be ordered red/orange
                 1: set balloon mean sizes to be anything between [0.1, 1]
+
+            rew_structure:
+                0: points given for balloon size
+                1: points given while inflating, negative on pop
+                2: points given for balloon size, 2x^1.3
+                3: points given while inflating, 2x^1.3, negative on pop
         """
         super(BartMetaEnv, self).__init__()
 
@@ -54,8 +60,14 @@ class BartMetaEnv(gym.Env):
         # Tweak parameters
         self.inflate_speed = inflate_speed
         self.inflate_noise = inflate_noise
+        if rew_on_pop is None:
+            if rew_structure in [0, 2]:
+                rew_on_pop = 0
+            elif rew_structure in [1, 3]:
+                rew_on_pop = -1
         self.rew_on_pop = rew_on_pop
         self.pop_noise = pop_noise
+        self.rew_structure = rew_structure
 
         self.inflate_delay = 0
         self.current_step = 0
@@ -131,6 +143,7 @@ class BartMetaEnv(gym.Env):
         finished = False
         end_size = 0
         reward = 0
+        inflate = 0
 
         if not self.toggle_task:
             if action == 1:  # Hold inflate button
@@ -141,11 +154,11 @@ class BartMetaEnv(gym.Env):
                     self.current_size > self.current_balloon_limit:
                     end_size = self.current_size
                     self.current_size = 0  # Balloon pops
-                    reward = self.rew_on_pop
                     finished = True
                     popped = True
             else:  # Action 0: stop inflating
                 if self.current_color in ["red", "yellow", "orange"]:
+                    finished = True
                     reward = self.current_size
         else:
             if self.currently_inflating:
@@ -161,7 +174,6 @@ class BartMetaEnv(gym.Env):
                         self.current_size > self.current_balloon_limit:
                         self.current_size = 0  # Balloon pops
                         end_size = self.current_size
-                        reward = self.rew_on_pop
                         self.currently_inflating = False
                         finished = True
                         popped = True
@@ -172,7 +184,27 @@ class BartMetaEnv(gym.Env):
                     self.current_size += inflate
                 else:
                     self.inflate_delay += 1
-
+        
+        # Compute rewards
+        if popped:
+            reward = self.rew_on_pop
+        elif self.rew_structure in [0, 2]:
+            if finished:
+                if self.rew_structure == 0:
+                    reward = self.current_size
+                elif self.rew_structure == 2:
+                    reward = 2 * (self.current_size)**1.3
+        elif self.rew_structure in [1, 3]:
+            # Calculate the amount of points gained based on the balloon size increase
+            prev_size = self.current_size - inflate
+            if self.rew_structure == 1:
+                next_rew = self.current_size
+                prev_rew = prev_size
+            elif self.rew_structure == 3:
+                next_rew = 2 * (self.current_size)**1.3
+                prev_rew = 2 * (prev_size)**1.3
+            reward = next_rew - prev_rew 
+               
         self.prev_action = action
         if popped:
             last_size = end_size
