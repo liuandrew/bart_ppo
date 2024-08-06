@@ -106,7 +106,8 @@ class BartMetaEnv(gym.Env):
         note that reset() changes to new meta conditions
         '''
         if self.colors_used <= 1:
-            self.current_color = "yellow"
+            self.current_color_idx = 1
+            self.current_color = "orange"
         else:
             self.current_color_idx = random.choice(range(self.colors_used))
             self.current_color = self.idx_to_color[self.current_color_idx]
