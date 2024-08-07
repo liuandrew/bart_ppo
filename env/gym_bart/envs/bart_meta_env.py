@@ -10,7 +10,8 @@ class BartMetaEnv(gym.Env):
     def __init__(self, colors_used=3, toggle_task=True,
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=None,
-                 pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0):
+                 pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0,
+                 fix_sizes=None):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -36,6 +37,9 @@ class BartMetaEnv(gym.Env):
                 1: points given while inflating, negative on pop
                 2: points given for balloon size, 2x^1.3
                 3: points given while inflating, 2x^1.3, negative on pop
+            
+            fix_sizes:
+                Can set to dict or list
         """
         super(BartMetaEnv, self).__init__()
 
@@ -68,7 +72,8 @@ class BartMetaEnv(gym.Env):
         self.rew_on_pop = rew_on_pop
         self.pop_noise = pop_noise
         self.rew_structure = rew_structure
-
+        self.fix_sizes = fix_sizes
+        
         self.inflate_delay = 0
         self.current_step = 0
         # self.observation_space = spaces.Tuple((
@@ -108,6 +113,14 @@ class BartMetaEnv(gym.Env):
                 c: np.random.uniform(0.1, 1)
                 for c in range(5)
             }
+        
+        if self.fix_sizes is not None:
+            if type(self.fix_sizes) == list:
+                for i, size in enumerate(self.fix_sizes):
+                    self.balloon_mean_sizes[i] = size
+            elif type(self.fix_sizes) == dict:
+                for i, size in self.fix_sizes.items():
+                    self.balloon_mean_sizes[i] = size
 
         obs = self.inner_reset()
         return obs, {}
