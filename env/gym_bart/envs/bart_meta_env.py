@@ -109,6 +109,7 @@ class BartMetaEnv(gym.Env):
             random.seed(seed)
         
         self.current_step = 0
+        self.balloon_count = 0
         
         # generate meta params
         if self.meta_setup == 0:
