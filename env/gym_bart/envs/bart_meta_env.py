@@ -11,7 +11,7 @@ class BartMetaEnv(gym.Env):
                  give_last_action=True, give_size=True,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=None,
                  pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0,
-                 fix_sizes=None):
+                 fix_sizes=None, num_balloons=None):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -37,9 +37,14 @@ class BartMetaEnv(gym.Env):
                 1: points given while inflating, negative on pop
                 2: points given for balloon size, 2x^1.3
                 3: points given while inflating, 2x^1.3, negative on pop
-            
+                4: points given for balloon size, 2x^2
+                5: points given for balloon size, 2x^2, negative on pop
             fix_sizes:
                 Can set to dict or list
+            num_balloons:
+                If set, fix the number of balloons. Note that max_steps will still be
+                    respected
+                
         """
         super(BartMetaEnv, self).__init__()
 
@@ -65,17 +70,21 @@ class BartMetaEnv(gym.Env):
         self.inflate_speed = inflate_speed
         self.inflate_noise = inflate_noise
         if rew_on_pop is None:
-            if rew_structure in [0, 2]:
+            if rew_structure in [0, 2, 4]:
                 rew_on_pop = 0
-            elif rew_structure in [1, 3]:
+            elif rew_structure in [1, 3, 5]:
                 rew_on_pop = -1
         self.rew_on_pop = rew_on_pop
         self.pop_noise = pop_noise
         self.rew_structure = rew_structure
         self.fix_sizes = fix_sizes
+        self.num_balloons = num_balloons
+        if self.num_balloons is None:
+            self.num_balloons = 1e8
         
         self.inflate_delay = 0
         self.current_step = 0
+        self.balloon_count = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Current size
@@ -140,6 +149,7 @@ class BartMetaEnv(gym.Env):
         self.current_size = 0.0
         self.prev_action = 0
         self.inflate_delay = 0
+        self.balloon_count += 1
         
         self.currently_inflating = False # used for stop/start version
         
@@ -201,12 +211,14 @@ class BartMetaEnv(gym.Env):
         # Compute rewards
         if popped:
             reward = self.rew_on_pop
-        elif self.rew_structure in [0, 2]:
+        elif self.rew_structure in [0, 2, 4, 5]:
             if finished:
                 if self.rew_structure == 0:
                     reward = self.current_size
                 elif self.rew_structure == 2:
                     reward = 2 * (self.current_size)**1.3
+                elif self.rew_structure in [4, 5]:
+                    reward = 2 * (self.current_size)**2
         elif self.rew_structure in [1, 3]:
             # Calculate the amount of points gained based on the balloon size increase
             prev_size = self.current_size - inflate
@@ -224,12 +236,19 @@ class BartMetaEnv(gym.Env):
         else:
             last_size = self.current_size
             
+        if finished:
+            next_obs = self.inner_reset()
+        else:
+            next_obs = self.get_observation()
+
         # Note on max step termination, we will still give current size worth of points
         #   since this might better allow for reaction time in meta environment
         self.current_step += 1
-        if self.current_step >= self.max_steps:
+        if self.current_step >= self.max_steps: 
             if not popped:
                 reward = self.current_size
+            terminated = True
+        elif self.balloon_count > self.num_balloons:
             terminated = True
             
         info = {
@@ -241,10 +260,6 @@ class BartMetaEnv(gym.Env):
             'balloon_limit': self.current_balloon_limit
         }
 
-        if finished:
-            next_obs = self.inner_reset()
-        else:
-            next_obs = self.get_observation()
 
         return next_obs, reward, terminated, truncated, info
     
