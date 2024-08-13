@@ -59,7 +59,7 @@ Evaluation function
 ================================================================
 '''
 def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_actions=None,
-            env_name='NavEnv-v0', seed=None, num_processes=1,
+             env_name='NavEnv-v0', seed=None, num_processes=1,
              device=torch.device('cpu'), ret_info=1, capture_video=False, env_kwargs={}, data_callback=None,
              num_episodes=10, verbose=0, with_activations=False, deterministic=True,
              aux_wrapper_kwargs={}, auxiliary_truth_sizes=[], auxiliary_tasks=[],

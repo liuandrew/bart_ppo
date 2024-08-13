@@ -221,10 +221,14 @@ def plot_meta_it_progression(res, metrics=['size', 'rt', 'popped'], ax=None, ep_
                 
 
 
-def get_meta_mean_diffs(res):
+def get_meta_mean_diffs(res, colors_used=3):
     num_eps = len(res['data']['current_color'])
     all_diffs = []
 
+    if colors_used <= 1:
+        color_it = [1]
+    else:
+        color_it = range(colors_used)
     for ep_num in range(num_eps):
         ep_diffs = []
         
@@ -237,7 +241,7 @@ def get_meta_mean_diffs(res):
         
         balloon_means = res['data']['balloon_means'][ep_num]
         
-        for j in range(3):
+        for j in color_it:
             it_mean = unpopped_its[unpopped_colors == j].mean()
             mean_diff = abs(balloon_means[j] - it_mean)
             ep_diffs.append(mean_diff)
@@ -247,9 +251,14 @@ def get_meta_mean_diffs(res):
 
 
 
-def get_meta_fixed_mean_diff(res):
+def get_meta_fixed_mean_diff(res, colors_used=3):
     num_eps = len(res['data']['current_color'])
     all_means = []
+
+    if colors_used <= 1:
+        color_it = [1]
+    else:
+        color_it = range(colors_used)
 
     for ep_num in range(num_eps):
         ep_means = []
@@ -263,7 +272,7 @@ def get_meta_fixed_mean_diff(res):
         
         balloon_means = res['data']['balloon_means'][ep_num]
         
-        for j in range(3):
+        for j in color_it:
             it_mean = unpopped_its[unpopped_colors == j].mean()
             ep_means.append(it_mean)
         all_means.append(ep_means)
