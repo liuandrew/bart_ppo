@@ -220,6 +220,123 @@ def plot_meta_it_progression(res, metrics=['size', 'rt', 'popped'], ax=None, ep_
                 ax[i, :].format(yformatter=['Not Popped', 'Popped'], ylocator=range(2))
                 
 
+def plot_ncolor_meta_ep(res, metrics=['size', 'rt', 'popped'], ax=None, ep_num=0,
+                        num_colors=1):
+    '''
+    Plot main characterics of a single evaluation of bart trials
+    Available metrics to pass in for plotting:
+        'size'/'rt'/'popped'
+
+    ep_num: which episode to plot from a set of meta bart trials
+    '''
+    colors = np.array(res['data']['current_color'][ep_num])
+    end_size = np.array(res['data']['last_size'][ep_num])
+    popped = np.array(res['data']['popped'][ep_num])
+    reaction_times = np.array(res['data']['inflate_delay'][ep_num])
+
+    metric_to_label = {
+        'size': 'Inflation Times',
+        'rt': 'Reaction Times',
+        'popped': 'Popped Count'
+    }
+
+    if num_colors == 1:
+        color_it = [1]
+    else:
+        color_it = range(num_colors)
+
+    if ax is None:
+        if num_colors == 1:
+            fig, axs = pplt.subplots(nrows=1, ncols=len(metrics), 
+                                     figwidth=6, sharey=False)
+            axs.format(toplabels=[metric_to_label[metric] for metric in metrics])
+        else: 
+            fig, axs = pplt.subplots(nrows=len(metrics), ncols=num_colors, 
+                                    figwidth=6, sharex=False)
+            axs.format(leftlabels=[metric_to_label[metric] for metric in metrics])
+    
+    for i, metric in enumerate(metrics):
+        max_height = 0
+        
+        for n, j in enumerate(color_it):
+            
+            ax = axs[i+n*num_colors]
+            if metric == 'size':
+                ax.format(xlim=[0, 1])
+                counts, _, _ = ax.hist(end_size[colors == j], c=bart_plot_colors[j], bins=40,
+                                             range=[0, 1])
+                max_height = max(max_height, np.max(counts))
+            elif metric == 'rt':
+                ax.hist(reaction_times[colors == j], c=bart_plot_colors[j])
+            elif metric == 'popped':
+                p = popped[colors == j].sum()
+                not_p = (~popped[colors == j]).sum()
+                ax.bar([0, 1], [p, not_p], width=0.5, c=bart_plot_colors[j])
+                ax.format(xformatter=['Popped', 'Not Popped'], xlocator=range(2))
+        if metric == 'size':
+            for n, j in enumerate(color_it):
+                ax = axs[i+n*num_colors]
+                balloon_mean = res['data']['balloon_means'][ep_num][j]
+                ax.plot([balloon_mean, balloon_mean], [0, max_height])
+    return axs
+
+    
+
+def plot_ncolor_meta_progression(res, metrics=['size', 'rt', 'popped'],
+                                 ax=None, ep_num=0, num_colors=3):
+    '''
+    Plot main characterics of a single evaluation of bart trials
+    Available metrics to pass in for plotting:
+        'size'/'rt'/'popped'
+
+    ep_num: which episode to plot from a set of meta bart trials
+    '''
+    colors = np.array(res['data']['current_color'][ep_num])
+    end_size = np.array(res['data']['last_size'][ep_num])
+    popped = np.array(res['data']['popped'][ep_num])
+    reaction_times = np.array(res['data']['inflate_delay'][ep_num])
+
+    metric_to_label = {
+        'size': 'Inflation Times',
+        'rt': 'Reaction Times',
+        'popped': 'Popped Count'
+    }
+
+    if num_colors == 1:
+        color_it = [1]
+    else:
+        color_it = range(num_colors)
+
+    if ax is None:
+        if num_colors == 1:
+            fig, axs = pplt.subplots(nrows=1, ncols=len(metrics), 
+                                     figwidth=6, sharey=False)
+            axs.format(toplabels=[metric_to_label[metric] for metric in metrics])
+        else: 
+            fig, axs = pplt.subplots(nrows=len(metrics), ncols=num_colors, 
+                                    figwidth=6, sharex=False)
+            axs.format(leftlabels=[metric_to_label[metric] for metric in metrics])
+    
+    for i, metric in enumerate(metrics):
+        for n, j in enumerate(color_it):
+            ax = axs[i+n*num_colors]
+            
+            if metric == 'size':
+                ax.format(ylim=[0, 1])
+                its = end_size[colors == j]
+                smoothed_its = pd.Series(its).ewm(alpha=0.1).mean()
+                ax.scatter(range(len(its)), its, c=bart_plot_colors[j], alpha=0.2)
+                ax.plot(range(len(its)), smoothed_its, c=bart_plot_colors[j], linewidth=2)
+                balloon_mean = res['data']['balloon_means'][ep_num][j]
+                ax.plot([0, len(its)], [balloon_mean, balloon_mean])
+            elif metric == 'rt':
+                rts = reaction_times[colors == j]
+                ax.scatter(range(len(rts)), rts, c=bart_plot_colors[j])
+            elif metric == 'popped':
+                p = popped[colors==j]*1
+                ax.scatter(range(len(p)), p, c=bart_plot_colors[j])
+                ax.format(yformatter=['Not Popped', 'Popped'], ylocator=range(2))
+
 
 def get_meta_mean_diffs(res, colors_used=3):
     num_eps = len(res['data']['current_color'])
@@ -249,9 +366,10 @@ def get_meta_mean_diffs(res, colors_used=3):
     
     return all_diffs
 
+    
 
 
-def get_meta_fixed_mean_diff(res, colors_used=3):
+def get_meta_self_mean_diff(res, colors_used=3):
     num_eps = len(res['data']['current_color'])
     all_means = []
 
@@ -270,8 +388,6 @@ def get_meta_fixed_mean_diff(res, colors_used=3):
         unpopped_its = end_size[~popped]
         unpopped_colors = colors[~popped]
         
-        balloon_means = res['data']['balloon_means'][ep_num]
-        
         for j in color_it:
             it_mean = unpopped_its[unpopped_colors == j].mean()
             ep_means.append(it_mean)
@@ -281,3 +397,28 @@ def get_meta_fixed_mean_diff(res, colors_used=3):
     mean_diff = np.abs(all_means - all_means.mean(axis=0))
     
     return mean_diff, all_means
+
+
+def get_pop_rates(res, colors_used=3):
+    num_eps = len(res['data']['current_color'])
+    all_means = []
+
+    if colors_used <= 1:
+        color_it = [1]
+    else:
+        color_it = range(colors_used)
+
+    for ep_num in range(num_eps):
+        ep_means = []
+        
+        colors = np.array(res['data']['current_color'][ep_num])
+        end_size = np.array(res['data']['last_size'][ep_num])
+        popped = np.array(res['data']['popped'][ep_num])
+        
+        for j in color_it:
+            it_mean = popped[colors == j].mean()
+            ep_means.append(it_mean)
+        all_means.append(ep_means)
+    
+    return all_means
+
