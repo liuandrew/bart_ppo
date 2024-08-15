@@ -85,6 +85,7 @@ class BartMetaEnv(gym.Env):
         self.inflate_delay = 0
         self.current_step = 0
         self.balloon_count = 0
+        self.current_ep = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Current size
@@ -110,7 +111,6 @@ class BartMetaEnv(gym.Env):
         
         self.current_step = 0
         self.balloon_count = 0
-        
         # generate meta params
         if self.meta_setup == 0:
             self.balloon_mean_sizes = {
@@ -127,11 +127,18 @@ class BartMetaEnv(gym.Env):
         if self.fix_sizes is not None:
             if type(self.fix_sizes) == list:
                 for i, size in enumerate(self.fix_sizes):
-                    self.balloon_mean_sizes[i] = size
+                    if type(size) == list:
+                        self.balloon_mean_sizes[i] = size[self.current_ep]
+                    else:
+                        self.balloon_mean_sizes[i] = size
             elif type(self.fix_sizes) == dict:
                 for i, size in self.fix_sizes.items():
-                    self.balloon_mean_sizes[i] = size
+                    if type(size) == list:
+                        self.balloon_mean_sizes[i] = size[self.current_ep]
+                    else:
+                        self.balloon_mean_sizes[i] = size
 
+        self.current_ep += 1
         obs = self.inner_reset()
         return obs, {}
 
