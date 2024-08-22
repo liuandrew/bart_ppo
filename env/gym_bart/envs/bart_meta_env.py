@@ -8,7 +8,7 @@ import random
 class BartMetaEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "video.frames_per_second": 24}
     def __init__(self, colors_used=3, toggle_task=True,
-                 give_last_action=True, give_size=True,
+                 give_last_action=True, give_size=True, give_rew=False,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=None,
                  pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0,
                  fix_sizes=None, num_balloons=None):
@@ -64,6 +64,7 @@ class BartMetaEnv(gym.Env):
         self.toggle_task = toggle_task
         self.give_last_action = give_last_action
         self.give_size = give_size
+        self.give_rew = give_rew
         self.max_steps = max_steps
 
         # Tweak parameters
@@ -86,14 +87,19 @@ class BartMetaEnv(gym.Env):
         self.current_step = 0
         self.balloon_count = 0
         self.current_ep = 0
+        self.prev_reward = 0.
+        self.prev_action = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Current size
         #     spaces.Discrete(2)  # Previous action
+        #     spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),  # Last reward
         # ))
-        self.observation_space = spaces.Box(low=0, high=1, shape=(5+1+2,))
+        if self.give_rew:
+            self.observation_space = spaces.Box(low=0, high=1, shape=(5+1+2+1,))
+        else:
+            self.observation_space = spaces.Box(low=0, high=1, shape=(5+1+2,))
         self.action_space = spaces.Discrete(2)  # 0: do nothing, 1: hold inflate button
-
         # meta parameters
         self.meta_setup = meta_setup
         self.balloon_mean_sizes = {
@@ -224,9 +230,9 @@ class BartMetaEnv(gym.Env):
                 if self.rew_structure == 0:
                     reward = self.current_size
                 elif self.rew_structure == 2:
-                    reward = 2 * (self.current_size)**1.3
+                    reward = (self.current_size)**1.3
                 elif self.rew_structure in [4, 5]:
-                    reward = 2 * (self.current_size)**2
+                    reward = (self.current_size)**2
         elif self.rew_structure in [1, 3]:
             # Calculate the amount of points gained based on the balloon size increase
             prev_size = self.current_size - inflate
@@ -234,21 +240,11 @@ class BartMetaEnv(gym.Env):
                 next_rew = self.current_size
                 prev_rew = prev_size
             elif self.rew_structure == 3:
-                next_rew = 2 * (self.current_size)**1.3
-                prev_rew = 2 * (prev_size)**1.3
+                next_rew = (self.current_size)**1.3
+                prev_rew = (prev_size)**1.3
             reward = next_rew - prev_rew 
                
-        self.prev_action = action
-        if popped:
-            last_size = end_size
-        else:
-            last_size = self.current_size
-            
-        if finished:
-            next_obs = self.inner_reset()
-        else:
-            next_obs = self.get_observation()
-
+        
         # Note on max step termination, we will still give current size worth of points
         #   since this might better allow for reaction time in meta environment
         self.current_step += 1
@@ -258,6 +254,19 @@ class BartMetaEnv(gym.Env):
             terminated = True
         elif self.balloon_count > self.num_balloons:
             terminated = True
+
+        self.prev_action = action
+        self.prev_reward = reward
+
+        if popped:
+            last_size = end_size
+        else:
+            last_size = self.current_size
+            
+        if finished:
+            next_obs = self.inner_reset()
+        else:
+            next_obs = self.get_observation()
             
         info = {
             'current_color': self.color_to_idx[self.current_color],
@@ -268,17 +277,19 @@ class BartMetaEnv(gym.Env):
             'balloon_limit': self.current_balloon_limit
         }
 
-
         return next_obs, reward, terminated, truncated, info
     
     def get_observation(self):
-        obs = np.zeros(8, dtype=np.float32)
+        
+        obs = np.zeros(self.observation_space.shape, dtype=np.float32)
         # obs = torch.zeros(8, dtype=torch.float)
         obs[self.color_to_idx[self.current_color]] = 1
         if self.give_size:
             obs[len(self.colors)] = self.current_size
         if self.give_last_action:
             obs[len(self.colors)+1+self.prev_action] = 1
+        if self.give_rew:
+            obs[len(self.colors)+3] = self.prev_reward
             
         return obs
     
