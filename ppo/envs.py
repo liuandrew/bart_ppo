@@ -60,6 +60,8 @@ def make_vec_env(env_id,
     seed: VecEnv calls this once and resets using an incrementing seed on first reset
     gamma: discount factor used for normalization calculations
     dummy: whether to use a DummyVecEnv which isn't parallelized
+    
+    env_kwargs: can pass dict or list of dicts if wanting different per env
     """
     env_kwargs = env_kwargs or {}
     vec_env_kwargs = vec_env_kwargs or {}
@@ -67,7 +69,7 @@ def make_vec_env(env_id,
     wrapper_kwargs = wrapper_kwargs or {}
     assert vec_env_kwargs is not None  # for mypy
 
-    def make_env(rank: int) -> Callable[[], gym.Env]:
+    def make_env(rank: int, env_kwargs: dict) -> Callable[[], gym.Env]:
         def _init() -> gym.Env:
             # For type checker:
             assert monitor_kwargs is not None
@@ -111,7 +113,11 @@ def make_vec_env(env_id,
             vec_env_cls = DummyVecEnv
         else:
             vec_env_cls = SubprocVecEnv
-    vec_env = vec_env_cls([make_env(i + start_index) for i in range(n_envs)], **vec_env_kwargs)
+            
+    if type(env_kwargs) == list:
+        vec_env = vec_env_cls([make_env(i + start_index, env_kwargs[i]) for i in range(n_envs)], **vec_env_kwargs)
+    else:
+        vec_env = vec_env_cls([make_env(i + start_index, env_kwargs) for i in range(n_envs)], **vec_env_kwargs)
     # Prepare the seeds for the first reset
     vec_env.seed(seed)
     
@@ -120,7 +126,6 @@ def make_vec_env(env_id,
         
     return vec_env
     
-
 
 """
 Old vec env code
