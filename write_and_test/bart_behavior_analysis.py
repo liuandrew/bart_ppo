@@ -4,6 +4,7 @@ from typing import Union
 import itertools
 import numpy as np
 import pandas as pd
+from plotting_utils import rgb_colors
 
 pplt.rc.update({'font.size': 10})
 
@@ -280,10 +281,10 @@ def plot_ncolor_meta_ep(res, metrics=['size', 'rt', 'popped'], ax=None, ep_num=0
                 ax.plot([balloon_mean, balloon_mean], [0, max_height])
     return axs
 
-    
+
 
 def plot_ncolor_meta_progression(res, metrics=['size', 'rt', 'popped'],
-                                 ax=None, ep_num=0, num_colors=3):
+                                 ax=None, ep_num=0, num_colors=3, include_non_pops=True):
     '''
     Plot main characterics of a single evaluation of bart trials
     Available metrics to pass in for plotting:
@@ -324,11 +325,16 @@ def plot_ncolor_meta_progression(res, metrics=['size', 'rt', 'popped'],
             if metric == 'size':
                 ax.format(ylim=[0, 1])
                 its = end_size[colors == j]
+                p = popped[colors == j]
                 smoothed_its = pd.Series(its).ewm(alpha=0.1).mean()
                 ax.scatter(range(len(its)), its, c=bart_plot_colors[j], alpha=0.2)
                 ax.plot(range(len(its)), smoothed_its, c=bart_plot_colors[j], linewidth=2)
                 balloon_mean = res['data']['balloon_means'][ep_num][j]
                 ax.plot([0, len(its)], [balloon_mean, balloon_mean])
+
+                if include_non_pops:
+                    smoothed_its = pd.Series(its[~p]).ewm(alpha=0.1).mean()
+                    ax.plot(np.argwhere(~p).flatten(), smoothed_its, c=rgb_colors[0])
             elif metric == 'rt':
                 rts = reaction_times[colors == j]
                 ax.scatter(range(len(rts)), rts, c=bart_plot_colors[j])
@@ -336,6 +342,45 @@ def plot_ncolor_meta_progression(res, metrics=['size', 'rt', 'popped'],
                 p = popped[colors==j]*1
                 ax.scatter(range(len(p)), p, c=bart_plot_colors[j])
                 ax.format(yformatter=['Not Popped', 'Popped'], ylocator=range(2))
+
+
+def plot_1color5fsize(res):
+    '''
+    Specific plot for seeing the inflation time meta progression
+    over fixed trial of 5 sizes and their pop rates
+    '''
+    fig, ax = pplt.subplots(nrows=2, ncols=5, 
+                            sharey=True, sharex=False,
+                            figwidth=7)
+    for ep_num in range(5):
+        
+        colors = np.array(res['data']['current_color'][ep_num])
+        end_size = np.array(res['data']['last_size'][ep_num])
+        popped = np.array(res['data']['popped'][ep_num])
+        # reaction_times = np.array(res['data']['inflate_delay'][ep_num])
+    
+        its = end_size[colors == 1]
+        p = popped[colors == 1]
+        smoothed_its = pd.Series(its).ewm(alpha=0.1).mean()
+        non_pop_its = pd.Series(its[~p]).ewm(alpha=0.1).mean().tolist()
+        non_pop_x = np.argwhere(~p).flatten().tolist()
+        balloon_mean = res['data']['balloon_means'][ep_num][1]
+        # print(non_pop_x, non_pop_its)
+
+        ax[0, ep_num].scatter(range(len(smoothed_its)), its, c=bart_plot_colors[1], alpha=0.2)
+        ax[0, ep_num].plot(range(len(smoothed_its)), smoothed_its, c=bart_plot_colors[1], linewidth=2)
+        ax[0, ep_num].plot(non_pop_x, non_pop_its, c=rgb_colors[0])
+        ax[0, ep_num].plot([0, len(smoothed_its)], [balloon_mean, balloon_mean])
+
+        ax[1, ep_num].barh([(p*1).sum(), (~p*1).sum()], c=bart_plot_colors[1])
+
+    ax[0, :].format(ylim=[0, 1])
+    ax[1, :].format(ylocator=range(2), yformatter=['Popped', 'Not Popped'])
+    ax.format(leftlabels=['Inflation Times', 'Pop Counts'],
+              toplabels=[rf'$\mu$={mu}' for mu in [0.2, 0.4, 0.6, 0.8, 1.0]])
+
+    
+
 
 
 def get_meta_mean_diffs(res, colors_used=3):
