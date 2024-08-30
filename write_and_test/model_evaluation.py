@@ -296,6 +296,234 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
 
 
 
+def forced_action_evaluate_multi(actor_critic, obs_rms=None, normalize=True, forced_actions=None,
+             env_name='NavEnv-v0', seed=None, num_processes=1,
+             device=torch.device('cpu'), ret_info=1, capture_video=False, env_kwargs={}, data_callback=None,
+             num_episodes=10, verbose=0, with_activations=False, deterministic=True,
+             aux_wrapper_kwargs={}, auxiliary_truth_sizes=[], auxiliary_tasks=[],
+             auxiliary_task_args=[],
+             eval_log_dir=None, video_folder='./video', with_aux=False):
+    '''
+    Rewritten forced_action_evaluate function for multiple parallel num_processes
+    Useful for running multiple environments with different conditions (e.g. pass
+     a list of env_kwargs and set num_processes)
+    Note that data callback needs to be able to handle multiple processes
+     See meta_bart_multi_callback for an example
+    !Forced action has not been tested
+    '''
+
+    if seed is None:
+        seed = np.random.randint(0, 1e9)
+
+    envs = make_vec_env(env_name, 
+                         seed=seed, 
+                         n_envs=num_processes,
+                         env_kwargs=env_kwargs,
+                         auxiliary_tasks=auxiliary_tasks,
+                         auxiliary_task_args=auxiliary_task_args,
+                         normalize=normalize,
+                         dummy=True,)
+
+    if normalize:
+        envs.training = False
+    if obs_rms is not None:
+        envs.obs_rms = obs_rms
+
+    eval_episode_rewards = []
+
+    all_obs = []
+    all_actions = []
+    all_action_log_probs = []
+    all_action_probs = []
+    all_rewards = []
+    all_rnn_hxs = []
+    all_dones = []
+    all_masks = []
+    all_activations = []
+    all_values = []
+    all_actor_features = []
+    all_auxiliary_preds = []
+    all_auxiliary_truths = []
+    data = {}
+    
+    ep_obs = []
+    ep_actions = []
+    ep_action_log_probs = []
+    ep_action_probs = []
+    ep_rewards = []
+    ep_rnn_hxs = []
+    ep_dones = []
+    ep_values = []
+    ep_masks = []
+    ep_actor_features = []
+    
+    ep_auxiliary_preds = []
+    ep_activations = []
+    ep_auxiliary_truths = []
+    
+    multi_dones = np.full(num_processes, False)
+
+    obs = envs.reset()
+    obs = torch.tensor(obs)
+    rnn_hxs = torch.zeros(
+        num_processes, actor_critic.recurrent_hidden_state_size, device=device)
+    masks = torch.zeros(num_processes, 1, device=device)
+
+    for ep in range(num_episodes):
+        step = 0
+        while True:
+            ep_obs.append(obs)
+            ep_rnn_hxs.append(rnn_hxs)
+            if data_callback is not None and step == 0:
+                data_inputs = {
+                    'model': actor_critic,
+                    'envs': envs,
+                    'rnn_hxs': rnn_hxs,
+                    'obs': obs,
+                }
+                data = data_callback(data_inputs, data, first=True,
+                                     num_processes=num_processes)
+
+            with torch.no_grad():
+                outputs = actor_critic.act(obs, rnn_hxs, 
+                                        masks, deterministic=deterministic,
+                                        with_activations=with_activations)
+                if forced_actions is None:
+                    action = outputs['action']
+                elif type(forced_actions) in [int, float]:
+                    action = torch.full((num_processes, 1), forced_actions)
+                elif type(forced_actions) in [list, np.ndarray]:
+                    # Can give partial episodes - after actions run out will use outputs
+                    if step >= len(forced_actions):
+                        action = outputs['action']
+                    else:
+                        action = torch.full((num_processes, 1), forced_actions[step])
+                    
+                elif type(forced_actions) == type(lambda:0):
+                    actions = [torch.tensor(forced_actions(step)) for i in range(num_processes)]
+                    action = torch.vstack(actions) 
+                elif type(forced_actions) == dict:
+                    # special case: assume a dict where each episode's actions are laid out
+                    action = torch.full((num_processes, 1), forced_actions[ep][step])
+                                                
+                rnn_hxs = outputs['rnn_hxs']
+                obs, reward, done, infos = envs.step(action)
+                obs = torch.tensor(obs)
+            
+            masks = torch.tensor(
+                [[0.0] if done_ else [1.0] for done_ in done],
+                dtype=torch.float32,
+                device=device)
+            
+            ep_actions.append(action)
+            ep_action_log_probs.append(outputs['action_log_probs'])
+            ep_action_probs.append(outputs['probs'])
+            ep_rewards.append(reward)
+            ep_dones.append(done)
+            ep_values.append(outputs['value'])
+            ep_masks.append(masks)
+            ep_actor_features.append(outputs['actor_features'])
+            
+            if 'auxiliary_preds' in outputs:
+                ep_auxiliary_preds.append(outputs['auxiliary_preds'])
+            
+            if with_activations:
+                ep_activations.append(outputs['activations'])
+
+            if data_callback is not None:
+                data_inputs = {
+                    'model': actor_critic,
+                    'envs': envs,
+                    'rnn_hxs': rnn_hxs,
+                    'obs': obs,
+                    'action': action,
+                    'reward': reward,
+                    'done': done,
+                    'info': infos,
+                }
+                data = data_callback(data_inputs, data, num_processes=num_processes)
+            
+            auxiliary_truths = [[] for i in range(len(actor_critic.auxiliary_output_sizes))]
+            if with_aux:
+                for info in infos:
+                    if 'auxiliary' in info and len(info['auxiliary']) > 0:
+                        for i, aux in enumerate(info['auxiliary']):
+                            auxiliary_truths[i].append(aux)
+                if len(auxiliary_truths) > 0:
+                    auxiliary_truths = [torch.tensor(np.vstack(aux)) for aux in auxiliary_truths]
+            ep_auxiliary_truths.append(auxiliary_truths)
+            
+            step += 1
+            
+            multi_dones = multi_dones | np.array(done)
+            
+            if multi_dones.all():
+                all_obs.append(np.array(ep_obs).transpose(1, 0, 2))
+                all_actions.append(np.array(ep_actions).transpose(1, 0, 2))
+                all_action_log_probs.append(np.array(ep_action_log_probs).transpose(1, 0, 2))
+                all_action_probs.append(np.array(ep_action_probs).transpose(1, 0, 2))
+                all_rewards.append(np.array(ep_rewards).transpose(1, 0))
+                all_rnn_hxs.append(np.array(ep_rnn_hxs).transpose(1, 0, 2))
+                all_dones.append(np.array(ep_dones).transpose(1, 0))
+                all_masks.append(np.array(ep_masks).transpose(1, 0, 2))
+                all_values.append(np.array(ep_values).transpose(1, 0, 2))
+                all_actor_features.append(np.array(ep_actor_features).transpose(1, 0, 2))
+                
+                all_auxiliary_preds.append(ep_auxiliary_preds)
+                all_activations.append(ep_activations)
+                all_auxiliary_truths.append(ep_auxiliary_truths)
+
+                if data_callback is not None:
+                    data_inputs = {
+                        'model': actor_critic,
+                        'envs': envs
+                    }
+                    data = data_callback(data_inputs, data, stack=True,
+                                         num_processes=num_processes)
+                          
+                if verbose >= 2:
+                    print(f'ep {i}, rew {np.sum(ep_rewards)}' )
+                    
+                ep_obs = []
+                ep_actions = []
+                ep_action_log_probs = []
+                ep_action_probs = []
+                ep_rewards = []
+                ep_rnn_hxs = []
+                ep_dones = []
+                ep_values = []
+                ep_masks = []
+                ep_actor_features = []
+                
+                ep_auxiliary_preds = []
+                ep_activations = []
+                ep_auxiliary_truths = []
+                
+                step = 0
+                
+                break
+    envs.close()
+    if verbose >= 1:
+        print(" Evaluation using {} episodes: mean reward {:.5f}\n".format(
+            len(eval_episode_rewards), np.mean(eval_episode_rewards)))
+
+    return {
+        'obs': all_obs,
+        'actions': all_actions,
+        'action_log_probs': all_action_log_probs,
+        'action_probs': all_action_probs,
+        'rewards': all_rewards,
+        'rnn_hxs': all_rnn_hxs,
+        'dones': all_dones,
+        'masks': all_masks,
+        # 'envs': envs,
+        'data': data,
+        'activations': all_activations,
+        'values': all_values,
+        'actor_features': all_actor_features,
+        'auxiliary_preds': all_auxiliary_preds,
+        'auxiliary_truths': all_auxiliary_truths,
+    }
 '''
 ================================================================
 Data Callbacks
@@ -362,6 +590,73 @@ def meta_bart_callback(data_inputs={}, data={}, first=False, stack=False):
 
     return data
     
+
+def meta_bart_multi_callback(data_inputs={}, data={}, first=False, stack=False,
+                             num_processes=1):
+    keys = ['current_color', 'last_size', 'balloon_limit', 'inflate_delay', 
+            'popped']
+    # print(data_inputs)
+    
+    if len(data) == 0:
+        data['balloon_means'] = []
+        data['ep_balloon_means'] = []
+        for key in keys:
+            data[key] = []
+            data[f'ep_{key}'] = [[] for i in range(num_processes)]
+        
+    if len(data['ep_balloon_means']) == 0:
+        data['ep_balloon_means'].append(
+            data_inputs['envs'].get_attr('balloon_mean_sizes')
+        )
+
+    if 'info' in data_inputs:
+        infos = data_inputs['info']
+        for i in range(len(infos)):
+            info = infos[i]
+            if 'bart_finished' in info and info['bart_finished']:
+                for key in keys:
+                    data[f'ep_{key}'][i].append(info[key])
+            
+    if stack:
+        for key in keys:
+            data[key].append(data[f'ep_{key}'])
+            data[f'ep_{key}'] = [[] for i in range(num_processes)]
+        data['balloon_means'].append(
+            data['ep_balloon_means'][0]
+        )
+        data['ep_balloon_means'] = []
+
+    return data
+
+
+def reshape_parallel_evalu_res(res):
+    '''Reshape parallel evaluation results to be episode-wise as we would
+    expect running the experiment in sequence
+    
+    For now, just simply take the first episode from each process
+    and don't worry about resets. This is made assuming that each process
+    is run for one episode and we're just doing it for parallel'''
+    keys = ['obs', 'actions', 'action_log_probs', 'action_probs',
+            'rewards', 'rnn_hxs', 'dones', 'masks',
+            'values']
+    # 'activations'
+    # 'auxiliary_truths', 'auxiliary_preds', 'actor_features'
+    new_res = {
+        k: [] for k in keys
+    }
+    for proc in range(len(res['dones'][0])):
+        done = res['dones'][0][proc]
+        idx = np.argmax(done)
+        for k in keys:
+            new_res[k].append(res[k][0][proc][:idx])
+    
+    new_res['data'] = res['data']
+    return new_res
+            
+        
+        
+        
+
 '''
 ================================================================
 Load checkpoint functions
