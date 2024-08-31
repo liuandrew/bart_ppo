@@ -381,6 +381,47 @@ def plot_1color5fsize(res):
 
     
 
+def plot_1colornfsize(res):
+    '''
+    Specific plot for seeing the inflation time meta progression
+    over fixed trial of n sizes and their pop rates
+    '''
+    num_eps = len(res['data']['current_color'])
+    rows = int(np.ceil(num_eps / 5))
+    fig, ax = pplt.subplots(nrows=rows, ncols=5, 
+                            sharey=True, sharex=False,
+                            figwidth=7)
+    pax = ax.panel_axes('t', width='3em', space=0)
+    pax.format(yticks=[], xticks=[])
+    
+    mus = []
+    for ep_num in range(num_eps):
+        colors = np.array(res['data']['current_color'][ep_num])
+        end_size = np.array(res['data']['last_size'][ep_num])
+        popped = np.array(res['data']['popped'][ep_num])
+        # reaction_times = np.array(res['data']['inflate_delay'][ep_num])
+    
+        its = end_size[colors == 1]
+        p = popped[colors == 1]
+        smoothed_its = pd.Series(its).ewm(alpha=0.1).mean()
+        non_pop_its = pd.Series(its[~p]).ewm(alpha=0.1).mean().tolist()
+        non_pop_x = np.argwhere(~p).flatten().tolist()
+        balloon_mean = res['data']['balloon_means'][ep_num][1]
+        mus.append(balloon_mean)
+        # print(non_pop_x, non_pop_its)
+
+        ax[ep_num].scatter(range(len(smoothed_its)), its, c=bart_plot_colors[1], alpha=0.2)
+        ax[ep_num].plot(range(len(smoothed_its)), smoothed_its, c=bart_plot_colors[1], linewidth=2)
+        ax[ep_num].plot(non_pop_x, non_pop_its, c=rgb_colors[0])
+        ax[ep_num].plot([0, len(smoothed_its)], [balloon_mean, balloon_mean])
+
+        pax[ep_num].bar([35], [(~p*1).sum()], c='kelly green', width=30)
+        pax[ep_num].bar([65], [(p*1).sum()], c='tomato', width=30)
+
+    ax.format(ylim=[0, 1], xlim=[0, 100])
+    pax.format(yticks=[])
+    for a, mu in zip(ax, mus):
+        a.format(title=rf'$\mu$={mu:.2f}')
 
 
 def get_meta_mean_diffs(res, colors_used=3):

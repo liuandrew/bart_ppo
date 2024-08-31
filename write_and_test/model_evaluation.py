@@ -629,13 +629,18 @@ def meta_bart_multi_callback(data_inputs={}, data={}, first=False, stack=False,
     return data
 
 
-def reshape_parallel_evalu_res(res):
+def reshape_parallel_evalu_res(res, meta_balloons=None):
     '''Reshape parallel evaluation results to be episode-wise as we would
     expect running the experiment in sequence
     
     For now, just simply take the first episode from each process
     and don't worry about resets. This is made assuming that each process
-    is run for one episode and we're just doing it for parallel'''
+    is run for one episode and we're just doing it for parallel
+    
+    meta_balloons: if passed, truncate all data to the number of balloons
+        used specifically for meta bart trials
+    '''
+
     keys = ['obs', 'actions', 'action_log_probs', 'action_probs',
             'rewards', 'rnn_hxs', 'dones', 'masks',
             'values']
@@ -650,7 +655,16 @@ def reshape_parallel_evalu_res(res):
         for k in keys:
             new_res[k].append(res[k][0][proc][:idx])
     
-    new_res['data'] = res['data']
+    if meta_balloons is not None:
+        new_res['data'] = {}
+        new_res['data']['balloon_means'] = res['data']['balloon_means'][0]
+        new_res['data']['current_color'] = [d[:meta_balloons] for d in res['data']['current_color'][0]]
+        new_res['data']['last_size'] = [d[:meta_balloons] for d in res['data']['last_size'][0]]
+        new_res['data']['balloon_limit'] = [d[:meta_balloons] for d in res['data']['balloon_limit'][0]]
+        new_res['data']['inflate_delay'] = [d[:meta_balloons] for d in res['data']['inflate_delay'][0]]
+        new_res['data']['popped'] = [d[:meta_balloons] for d in res['data']['popped'][0]]
+    else:
+        new_res['data'] = res['data']
     return new_res
             
         
