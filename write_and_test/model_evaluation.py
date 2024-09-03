@@ -440,6 +440,7 @@ def forced_action_evaluate_multi(actor_critic, obs_rms=None, normalize=True, for
                     'reward': reward,
                     'done': done,
                     'info': infos,
+                    'step': step,
                 }
                 data = data_callback(data_inputs, data, num_processes=num_processes)
             
@@ -600,6 +601,8 @@ def meta_bart_multi_callback(data_inputs={}, data={}, first=False, stack=False,
     if len(data) == 0:
         data['balloon_means'] = []
         data['ep_balloon_means'] = []
+        data['balloon_step'] = []
+        data['ep_balloon_step'] = [[] for i in range(num_processes)]
         for key in keys:
             data[key] = []
             data[f'ep_{key}'] = [[] for i in range(num_processes)]
@@ -616,6 +619,7 @@ def meta_bart_multi_callback(data_inputs={}, data={}, first=False, stack=False,
             if 'bart_finished' in info and info['bart_finished']:
                 for key in keys:
                     data[f'ep_{key}'][i].append(info[key])
+                data['ep_balloon_step'][i].append(data_inputs['step'])
             
     if stack:
         for key in keys:
@@ -624,7 +628,9 @@ def meta_bart_multi_callback(data_inputs={}, data={}, first=False, stack=False,
         data['balloon_means'].append(
             data['ep_balloon_means'][0]
         )
+        data['balloon_step'].append(data['ep_balloon_step'])
         data['ep_balloon_means'] = []
+        data['ep_balloon_step'] = [[] for i in range(num_processes)]
 
     return data
 
@@ -663,6 +669,7 @@ def reshape_parallel_evalu_res(res, meta_balloons=None):
         new_res['data']['balloon_limit'] = [d[:meta_balloons] for d in res['data']['balloon_limit'][0]]
         new_res['data']['inflate_delay'] = [d[:meta_balloons] for d in res['data']['inflate_delay'][0]]
         new_res['data']['popped'] = [d[:meta_balloons] for d in res['data']['popped'][0]]
+        new_res['data']['balloon_step'] = [d[:meta_balloons] for d in res['data']['balloon_step'][0]]
     else:
         new_res['data'] = res['data']
     return new_res
