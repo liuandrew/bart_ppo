@@ -11,7 +11,7 @@ class BartMetaEnv(gym.Env):
                  give_last_action=True, give_size=True, give_rew=False,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=None,
                  pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0,
-                 fix_sizes=None, num_balloons=None):
+                 fix_sizes=None, num_balloons=None, rew_p=1):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -35,10 +35,11 @@ class BartMetaEnv(gym.Env):
             rew_structure:
                 0: points given for balloon size
                 1: points given while inflating, negative on pop
-                2: points given for balloon size, 2x^1.3
-                3: points given while inflating, 2x^1.3, negative on pop
-                4: points given for balloon size, 2x^2
-                5: points given for balloon size, 2x^2, negative on pop
+                2: points given for balloon size, x^1.3
+                3: points given while inflating, x^1.3, negative on pop
+                4: points given for balloon size, x^2
+                5: points given for balloon size, x^2, negative on pop
+                6: points given for balloon size, x^p, p defined by rew_p
             fix_sizes:
                 Can set to dict or list
             num_balloons:
@@ -71,11 +72,12 @@ class BartMetaEnv(gym.Env):
         self.inflate_speed = inflate_speed
         self.inflate_noise = inflate_noise
         if rew_on_pop is None:
-            if rew_structure in [0, 2, 4]:
+            if rew_structure in [0, 2, 4, 6]:
                 rew_on_pop = 0
             elif rew_structure in [1, 3, 5]:
                 rew_on_pop = -1
         self.rew_on_pop = rew_on_pop
+        self.rew_p = rew_p
         self.pop_noise = pop_noise
         self.rew_structure = rew_structure
         self.fix_sizes = fix_sizes
@@ -225,7 +227,7 @@ class BartMetaEnv(gym.Env):
         # Compute rewards
         if popped:
             reward = self.rew_on_pop
-        elif self.rew_structure in [0, 2, 4, 5]:
+        elif self.rew_structure in [0, 2, 4, 5, 6]:
             if finished:
                 if self.rew_structure == 0:
                     reward = self.current_size
@@ -233,6 +235,8 @@ class BartMetaEnv(gym.Env):
                     reward = (self.current_size)**1.3
                 elif self.rew_structure in [4, 5]:
                     reward = (self.current_size)**2
+                elif self.rew_structure == 6:
+                    reward = (self.current_size)**(self.rew_p)
         elif self.rew_structure in [1, 3]:
             # Calculate the amount of points gained based on the balloon size increase
             prev_size = self.current_size - inflate
