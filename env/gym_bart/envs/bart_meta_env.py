@@ -248,6 +248,7 @@ class BartMetaEnv(gym.Env):
                 prev_rew = (prev_size)**1.3
             reward = next_rew - prev_rew 
                
+        # print(popped, reward, type(reward), self.current_size)
         
         # Note on max step termination, we will still give current size worth of points
         #   since this might better allow for reaction time in meta environment
