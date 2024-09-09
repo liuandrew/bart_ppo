@@ -10,7 +10,7 @@ class BartEnv(gym.Env):
     def __init__(self, colors_used=3, toggle_task=True,
                  give_last_action=True, give_size=True,
                  passive_trials=False, passive_trial_prob=0.2,
-                 fixed_reward_prob=0.2,
+                 fixed_reward_prob=0.2, random_start_wait=False,
                  inflate_speed=0.05, inflate_noise=0, rew_on_pop=0,
                  pop_noise=0.05, max_steps=200, ):
         """
@@ -30,6 +30,7 @@ class BartEnv(gym.Env):
             rew_on_pop: reward given if balloon pops (set to negative for punishment)
             passive_trials: whether to include passive trials
             passive_trial_prob: how often to have passive trials
+            random_start_wait: whether to add an initial waiting period of 0-5 timesteps
         """
         super(BartEnv, self).__init__()
 
@@ -54,6 +55,7 @@ class BartEnv(gym.Env):
         self.passive_trials = passive_trials
         self.passive_trial_prob = passive_trial_prob
         self.fixed_reward_prob = fixed_reward_prob
+        self.random_start_wait = random_start_wait
 
         # Tweak parameters
         self.inflate_speed = inflate_speed
@@ -63,6 +65,7 @@ class BartEnv(gym.Env):
 
         self.inflate_delay = 0
         self.current_step = 0
+        self.start_wait_length = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Discrete(1), # Passive trial flag
@@ -95,9 +98,12 @@ class BartEnv(gym.Env):
         self.prev_action = 0
         self.inflate_delay = 0
         self.current_step = 0
+        self.start_wait_length = 0
 
         self.currently_inflating = False # used for stop/start version
         
+        if self.random_start_wait:
+            self.start_wait_length = random.choice(range(6))
         # Pick a pop size
         if self.current_color in ["red", "orange", "yellow"]:
             mean = self.colors[self.current_color]["mean"]
@@ -117,7 +123,10 @@ class BartEnv(gym.Env):
         end_size = 0
         reward = 0
 
-        if not self.toggle_task:
+        if self.current_step < self.start_wait_length:
+            # Ignore all actions
+            pass
+        elif not self.toggle_task:
             if action == 1:  # Hold inflate button
                 inflate = random.gauss(self.inflate_speed, self.inflate_noise)
                 self.current_size += inflate
@@ -188,6 +197,8 @@ class BartEnv(gym.Env):
                     self.current_size += inflate
                 else:
                     self.inflate_delay += 1
+                    
+            
 
         self.prev_action = action
         if popped:
@@ -215,7 +226,9 @@ class BartEnv(gym.Env):
     def get_observation(self):
         obs = np.zeros(self.observation_space.shape, dtype=np.float32)
         # obs = torch.zeros(8, dtype=torch.float)
-        obs[self.color_to_idx[self.current_color]] = 1
+        if self.current_step >= self.start_wait_length:
+            obs[self.color_to_idx[self.current_color]] = 1
+
         if self.passive_trial:
             obs[len(self.colors)] = 1
         if self.give_size:
