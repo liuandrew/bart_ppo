@@ -297,7 +297,7 @@ def main():
             global_step += 1 * args.num_processes
             with torch.no_grad():
                 outputs = actor_critic.act(rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                    rollouts.masks[step])
+                    rollouts.masks[step], deterministic=args.deterministic_actions)
                 action = outputs['action']
                 value = outputs['value']
                 action_log_prob = outputs['action_log_probs']
