@@ -268,11 +268,6 @@ class BartMetaEnv(gym.Env):
         else:
             last_size = self.current_size
             
-        if finished:
-            next_obs = self.inner_reset()
-        else:
-            next_obs = self.get_observation()
-            
         info = {
             'current_color': self.color_to_idx[self.current_color],
             'last_size': last_size,
@@ -281,6 +276,11 @@ class BartMetaEnv(gym.Env):
             'inflate_delay': self.inflate_delay,
             'balloon_limit': self.current_balloon_limit
         }
+
+        if finished:
+            next_obs = self.inner_reset()
+        else:
+            next_obs = self.get_observation()
 
         return next_obs, reward, terminated, truncated, info
     
