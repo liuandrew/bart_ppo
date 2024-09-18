@@ -12,7 +12,7 @@ class BartEnv(gym.Env):
                  passive_trials=False, passive_trial_prob=0.2,
                  fixed_reward_prob=0.2, random_start_wait=False,
                  inflate_speed=0.05, inflate_noise=0, rew_on_pop=0,
-                 pop_noise=0.05, max_steps=200, ):
+                 pop_noise=0.05, max_steps=200, fix_conditions=[]):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -31,6 +31,14 @@ class BartEnv(gym.Env):
             passive_trials: whether to include passive trials
             passive_trial_prob: how often to have passive trials
             random_start_wait: whether to add an initial waiting period of 0-5 timesteps
+        
+        fixed_conditions: pass conditions to force resets with in the form of a list
+            each fixed condition should itself be a dict with optional entries of
+            'color': string or int
+            'size': float (size limit of balloon)
+            'passive': bool (only for red/orange/yellow balloon)
+            'delay': int (number  of steps to delay before showing balloon)
+            
         """
         super(BartEnv, self).__init__()
 
@@ -56,6 +64,7 @@ class BartEnv(gym.Env):
         self.passive_trial_prob = passive_trial_prob
         self.fixed_reward_prob = fixed_reward_prob
         self.random_start_wait = random_start_wait
+        self.fix_conditions = fix_conditions
 
         # Tweak parameters
         self.inflate_speed = inflate_speed
@@ -66,6 +75,7 @@ class BartEnv(gym.Env):
         self.inflate_delay = 0
         self.current_step = 0
         self.start_wait_length = 0
+        self.balloon_count = 0
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Discrete(1), # Passive trial flag
@@ -93,7 +103,15 @@ class BartEnv(gym.Env):
                 
             if random.random() < self.passive_trial_prob:
                 self.passive_trial = True
-                
+        if self.balloon_count < len(self.fix_conditions) and \
+            'color' in self.fix_conditions[self.balloon_count]:
+            c = self.fix_conditions[self.balloon_count]['color']
+            if type(c) == int:
+                c = self.idx_to_color[c]
+            self.current_color = c
+        if self.balloon_count < len(self.fix_conditions) and \
+            'passive' in self.fix_conditions[self.balloon_count]:
+            self.passive_trial = self.fix_conditions[self.balloon_count]['passive']
         self.current_size = 0.0
         self.prev_action = 0
         self.inflate_delay = 0
@@ -104,6 +122,10 @@ class BartEnv(gym.Env):
         
         if self.random_start_wait:
             self.start_wait_length = random.choice(range(6))
+        if self.balloon_count < len(self.fix_conditions) and \
+            'delay' in self.fix_conditions[self.balloon_count]:
+            self.start_wait_length = self.fix_conditions[self.balloon_count]['delay']
+        
         # Pick a pop size
         if self.current_color in ["red", "orange", "yellow"]:
             mean = self.colors[self.current_color]["mean"]
@@ -113,6 +135,14 @@ class BartEnv(gym.Env):
                 self.current_balloon_limit = random.gauss(mean, self.pop_noise)
         else:
             self.current_balloon_limit = self.colors[self.current_color]["fixed_size"]
+        if self.balloon_count < len(self.fix_conditions) and \
+            'size' in self.fix_conditions[self.balloon_count]:
+            self.current_balloon_limit = self.fix_conditions[self.balloon_count]['size']
+
+            
+            
+        self.balloon_count += 1
+            
 
         return self.get_observation(), {}
 
