@@ -9,10 +9,11 @@ class BartEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "video.frames_per_second": 24}
     def __init__(self, colors_used=3, toggle_task=True,
                  give_last_action=True, give_size=True,
-                 passive_trials=False, passive_trial_prob=0.2,
+                 passive_trial_prob=0.2,
                  fixed_reward_prob=0.2, random_start_wait=False,
                  inflate_speed=0.05, inflate_noise=0, rew_on_pop=0,
-                 pop_noise=0.05, max_steps=200, fix_conditions=[]):
+                 pop_noise=0.05, max_steps=200, fix_conditions=[],
+                 punish_passive=0):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -28,10 +29,10 @@ class BartEnv(gym.Env):
             inflate_noise: std of Gaussian noise added to inflation
             pop_noise: std of Gaussian noise added to pop time
             rew_on_pop: reward given if balloon pops (set to negative for punishment)
-            passive_trials: whether to include passive trials
             passive_trial_prob: how often to have passive trials
             random_start_wait: whether to add an initial waiting period of 0-5 timesteps
-        
+            punish_passive: punishment for hitting the button on passive trials
+            
         fixed_conditions: pass conditions to force resets with in the form of a list
             each fixed condition should itself be a dict with optional entries of
             'color': string or int
@@ -60,10 +61,10 @@ class BartEnv(gym.Env):
         self.give_size = give_size
         self.max_steps = max_steps
         
-        self.passive_trials = passive_trials
         self.passive_trial_prob = passive_trial_prob
         self.fixed_reward_prob = fixed_reward_prob
         self.random_start_wait = random_start_wait
+        self.punish_passive = punish_passive
         self.fix_conditions = fix_conditions
 
         # Tweak parameters
@@ -196,6 +197,10 @@ class BartEnv(gym.Env):
                         self.currently_inflating = False
                         terminated = True
                         popped = True
+                        
+            if self.currently_inflating and (self.current_color in ["gray", "pink"] or 
+                                             self.passive_trial) and action == 1:
+                reward = self.punish_passive
                         
             
             elif self.currently_inflating and self.current_color in ["red", "yellow", "orange"]:
