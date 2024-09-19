@@ -64,11 +64,14 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
              num_episodes=10, verbose=0, with_activations=False, deterministic=True,
              aux_wrapper_kwargs={}, auxiliary_truth_sizes=[], auxiliary_tasks=[],
              auxiliary_task_args=[],
-             eval_log_dir=None, video_folder='./video', with_aux=False):
+             eval_log_dir=None, video_folder='./video', with_aux=False,
+             add_last_rnn=True, random_init_rnn_hxs=False):
     '''
     ret_info: level of info that should be tracked and returned
     capture_video: whether video should be captured for episodes
     env_kwargs: any kwargs to create environment with
+    add_last_rnn: when True, add te final rnn_hx to the recorded rnn_hxs
+    random_init_rnn_hxs: if True, randomize initial rnn_hxs with N(0, 0.2)
     data_callback: a function that should be called at each step to pull information
         from the environment if needed. The function will take arguments
             def callback(actor_critic, vec_envs, recurrent_hidden_states, data):
@@ -157,6 +160,12 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
                 data = data_callback(data_inputs, data, first=True)
 
             with torch.no_grad():
+                
+                if random_init_rnn_hxs:
+                    for i, mask in enumerate(masks):
+                        if mask == 0:
+                            rnn_hxs[i] = torch.tensor(np.random.normal(0, 0.2, size=(64,))) 
+                
                 outputs = actor_critic.act(obs, rnn_hxs, 
                                         masks, deterministic=deterministic,
                                         with_activations=with_activations)
@@ -228,6 +237,8 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
             step += 1
             
             if done[0]:
+                if add_last_rnn:
+                    ep_rnn_hxs.append(rnn_hxs)
                 all_obs.append(np.vstack(ep_obs))
                 all_actions.append(np.vstack(ep_actions))
                 all_action_log_probs.append(np.vstack(ep_action_log_probs))
@@ -268,6 +279,8 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
                 ep_activations = []
                 ep_auxiliary_truths = []
                 
+                rnn_hxs = torch.zeros(
+                    num_processes, actor_critic.recurrent_hidden_state_size, device=device)
                 step = 0
                 
                 break
@@ -285,7 +298,7 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
         'rnn_hxs': all_rnn_hxs,
         'dones': all_dones,
         'masks': all_masks,
-        # 'envs': envs,
+        'envs': envs,
         'data': data,
         'activations': all_activations,
         'values': all_values,
@@ -502,6 +515,8 @@ def forced_action_evaluate_multi(actor_critic, obs_rms=None, normalize=True, for
                 
                 step = 0
                 
+                rnn_hxs = torch.zeros(
+                    num_processes, actor_critic.recurrent_hidden_state_size, device=device)
                 break
     envs.close()
     if verbose >= 1:
@@ -547,6 +562,7 @@ def bart_toggle_data_callback(data_inputs={}, data={}, first=False, stack=False)
         data['popped'] = []
         data['inflate_delay'] = []
         data['balloon_limit'] = []
+        
     
     if 'done' in data_inputs and data_inputs['done']:
         info = data_inputs['info'][0]
