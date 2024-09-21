@@ -688,6 +688,25 @@ def reshape_parallel_evalu_res(res, meta_balloons=None):
         new_res['data']['balloon_step'] = [d[:meta_balloons] for d in res['data']['balloon_step'][0]]
     else:
         new_res['data'] = res['data']
+
+    if 'activations' in res:
+        activ_types = ['shared', 'actor', 'critic']
+        
+        new_res['activations'] = {}
+        for activ_type in activ_types:
+            num_layers = len(res['activations'][0][0][f'{activ_type}_activations'])
+            for layer in range(num_layers):
+                activ = []                
+                for proc in range(len(res['dones'][0])):
+                    done = res['dones'][0][proc]
+                    idx = np.argmax(done)
+                    a = []
+                    for step in range(idx):
+                        a.append(res['activations'][0][step][f'{activ_type}_activations'][layer][proc])
+                    activ.append(torch.vstack(a))
+                    
+                new_res['activations'][f'{activ_type}{layer}'] = activ
+                    
     return new_res
             
         
