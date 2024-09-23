@@ -13,7 +13,7 @@ class BartEnv(gym.Env):
                  fixed_reward_prob=0.2, random_start_wait=False,
                  inflate_speed=0.05, inflate_noise=0, rew_on_pop=0,
                  pop_noise=0.05, max_steps=200, fix_conditions=[],
-                 punish_passive=0):
+                 punish_passive=0, num_balloons=None):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -32,6 +32,7 @@ class BartEnv(gym.Env):
             passive_trial_prob: how often to have passive trials
             random_start_wait: whether to add an initial waiting period of 0-5 timesteps
             punish_passive: punishment for hitting the button on passive trials
+            num_balloons: if given, do a trial with consecutive balloons
             
         fixed_conditions: pass conditions to force resets with in the form of a list
             each fixed condition should itself be a dict with optional entries of
@@ -77,6 +78,9 @@ class BartEnv(gym.Env):
         self.current_step = 0
         self.start_wait_length = 0
         self.balloon_count = 0
+
+        self.num_balloons = num_balloons
+        self.ep_balloon_count = 1
         # self.observation_space = spaces.Tuple((
         #     spaces.Discrete(len(self.colors)),  # Color index
         #     spaces.Discrete(1), # Passive trial flag
@@ -118,6 +122,7 @@ class BartEnv(gym.Env):
         self.inflate_delay = 0
         self.current_step = 0
         self.start_wait_length = 0
+        self.ep_balloon_count = 1
 
         self.currently_inflating = False # used for stop/start version
         
@@ -140,10 +145,7 @@ class BartEnv(gym.Env):
             'size' in self.fix_conditions[self.balloon_count]:
             self.current_balloon_limit = self.fix_conditions[self.balloon_count]['size']
 
-            
-            
         self.balloon_count += 1
-            
 
         return self.get_observation(), {}
 
@@ -198,12 +200,8 @@ class BartEnv(gym.Env):
                         terminated = True
                         popped = True
                         
-            if self.currently_inflating and (self.current_color in ["gray", "pink"] or 
-                                             self.passive_trial) and action == 1:
-                reward = self.punish_passive
-                        
-            
             elif self.currently_inflating and self.current_color in ["red", "yellow", "orange"]:
+                # R/O/Y passive trials
                 inflate = random.gauss(self.inflate_speed, self.inflate_noise)
                 self.current_size += inflate
                 if self.current_size > self.current_balloon_limit:
@@ -213,6 +211,8 @@ class BartEnv(gym.Env):
                     self.currently_inflating = False
                     terminated = True
                     popped = False
+                elif action == 1:
+                    reward = self.punish_passive
                         
             elif self.currently_inflating and self.current_color in ["gray", "pink"]:
                 inflate = random.gauss(self.inflate_speed, self.inflate_noise)
@@ -224,6 +224,8 @@ class BartEnv(gym.Env):
                     self.currently_inflating = False
                     terminated = True
                     popped = False
+                elif action == 1:
+                    reward = self.punish_passive
 
             else:
                 if action == 1:
@@ -233,7 +235,13 @@ class BartEnv(gym.Env):
                 else:
                     self.inflate_delay += 1
                     
-            
+        
+        if self.num_balloons is not None and terminated:
+            if self.ep_balloon_count >= self.num_balloons:
+                pass
+            else:
+                terminated = False
+                obs, _ = self.inner_reset()
 
         self.prev_action = action
         if popped:
@@ -273,6 +281,59 @@ class BartEnv(gym.Env):
             
         return obs
     
+    def inner_reset(self):
+        """Reset function used for multiple continuous balloon case"""
+        self.passive_trial = False
+        
+        if random.random() < self.fixed_reward_prob:
+            self.current_color = self.idx_to_color[random.choice([3, 4])] #gray or pink
+        else:
+            if self.colors_used <= 1:
+                self.current_color = "orange"
+            else:
+                self.current_color = self.idx_to_color[random.choice(range(self.colors_used))]
+                
+            if random.random() < self.passive_trial_prob:
+                self.passive_trial = True
+        if self.balloon_count < len(self.fix_conditions) and \
+            'color' in self.fix_conditions[self.balloon_count]:
+            c = self.fix_conditions[self.balloon_count]['color']
+            if type(c) == int:
+                c = self.idx_to_color[c]
+            self.current_color = c
+        if self.balloon_count < len(self.fix_conditions) and \
+            'passive' in self.fix_conditions[self.balloon_count]:
+            self.passive_trial = self.fix_conditions[self.balloon_count]['passive']
+
+        self.current_size = 0.0
+        self.inflate_delay = 0
+        self.start_wait_length = 0
+        self.currently_inflating = False # used for stop/start version
+        
+        if self.random_start_wait:
+            self.start_wait_length = random.choice(range(6))
+        if self.balloon_count < len(self.fix_conditions) and \
+            'delay' in self.fix_conditions[self.balloon_count]:
+            self.start_wait_length = self.fix_conditions[self.balloon_count]['delay']
+        
+        # Pick a pop size
+        if self.current_color in ["red", "orange", "yellow"]:
+            mean = self.colors[self.current_color]["mean"]
+            if self.passive_trial:
+                self.current_balloon_limit = mean
+            else:
+                self.current_balloon_limit = random.gauss(mean, self.pop_noise)
+        else:
+            self.current_balloon_limit = self.colors[self.current_color]["fixed_size"]
+        if self.balloon_count < len(self.fix_conditions) and \
+            'size' in self.fix_conditions[self.balloon_count]:
+            self.current_balloon_limit = self.fix_conditions[self.balloon_count]['size']
+
+        self.balloon_count += 1
+        self.ep_balloon_count += 1
+
+        return self.get_observation(), {}
+
     def render(self, mode="rgb_array"):
         return np.zeros((64, 64))
     
