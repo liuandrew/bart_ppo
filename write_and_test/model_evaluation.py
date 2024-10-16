@@ -91,6 +91,7 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
 
     if seed is None:
         seed = np.random.randint(0, 1e9)
+    torch.manual_seed(seed)
 
     envs = make_vec_env(env_name, 
                          seed=seed, 
@@ -336,6 +337,7 @@ def forced_action_evaluate_multi(actor_critic, obs_rms=None, normalize=True, for
                          auxiliary_task_args=auxiliary_task_args,
                          normalize=normalize,
                          dummy=True,)
+    torch.manual_seed(seed)
 
     if normalize:
         envs.training = False
@@ -711,8 +713,50 @@ def reshape_parallel_evalu_res(res, meta_balloons=None):
             
         
         
+def reshape_activations(res, inplace=True):
+    activations = {}
+    activ_types = ['shared', 'actor', 'critic']
+    num_eps = len(res['dones'])
+    
+    for activ_type in activ_types:
+        num_layers = len(res['activations'][0][0][f'{activ_type}_activations'])
+        for layer in range(num_layers):
+            for ep in range(num_eps):
+                steps = len(res['dones'][ep])
+                activ = []
+                a = []
+                for step in range(steps):
+                    a.append(res['activations'][ep][step][f'{activ_type}_activations'][layer])
+                activ.append(torch.vstack(a))
+            activations[f'{activ_type}{layer}'] = activ
         
+    if inplace:
+        res['activations'] = activations
+    else:
+        return activations
 
+
+def bart_color_n_callback(data_inputs={}, data={}, first=False, stack=False):
+    keys = ['current_color', 'last_size', 'balloon_limit', 'inflate_delay', 'popped', 'passive']
+    # print(data_inputs)
+    
+    if len(data) == 0:
+        for key in keys:
+            data[key] = []
+            data[f'ep_{key}'] = []
+        
+    if 'info' in data_inputs:
+        info = data_inputs['info'][0]
+        if 'bart_finished' in info and info['bart_finished']:
+            for key in keys:
+                data[f'ep_{key}'].append(info[key])
+        
+        if 'done' in data_inputs and data_inputs['done']:
+            for key in keys:
+                data[key].append(data[f'ep_{key}'])
+                data[f'ep_{key}'] = []
+
+    return data
 '''
 ================================================================
 Load checkpoint functions

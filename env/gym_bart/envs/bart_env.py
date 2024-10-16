@@ -235,8 +235,10 @@ class BartEnv(gym.Env):
                 else:
                     self.inflate_delay += 1
                     
-        
+        finished = False
+        # Use inner reset instead of episode termination on multi-balloons
         if self.num_balloons is not None and terminated:
+            finished = True
             if self.ep_balloon_count >= self.num_balloons:
                 pass
             else:
@@ -261,6 +263,8 @@ class BartEnv(gym.Env):
             'current_color': self.color_to_idx[self.current_color],
             'last_size': last_size,
             'popped': popped,
+            'passive': self.passive_trial,
+            'bart_finished': finished,
             'inflate_delay': self.inflate_delay,
             'balloon_limit': self.current_balloon_limit
         }
