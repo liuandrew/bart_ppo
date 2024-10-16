@@ -222,6 +222,7 @@ def forced_action_evaluate(actor_critic, obs_rms=None, normalize=True, forced_ac
                     'reward': reward,
                     'done': done,
                     'info': infos,
+                    'step': step,
                 }
                 data = data_callback(data_inputs, data)
             
@@ -739,22 +740,26 @@ def reshape_activations(res, inplace=True):
 def bart_color_n_callback(data_inputs={}, data={}, first=False, stack=False):
     keys = ['current_color', 'last_size', 'balloon_limit', 'inflate_delay', 'popped', 'passive']
     # print(data_inputs)
-    
     if len(data) == 0:
         for key in keys:
             data[key] = []
             data[f'ep_{key}'] = []
+        data['balloon_step'] = []
+        data['ep_balloon_step'] = []
         
     if 'info' in data_inputs:
         info = data_inputs['info'][0]
         if 'bart_finished' in info and info['bart_finished']:
             for key in keys:
                 data[f'ep_{key}'].append(info[key])
+            data['ep_balloon_step'].append(data_inputs['step'])
         
         if 'done' in data_inputs and data_inputs['done']:
             for key in keys:
                 data[key].append(data[f'ep_{key}'])
                 data[f'ep_{key}'] = []
+            data['balloon_step'].append(data['ep_balloon_step'])
+            data['ep_balloon_step'] = []
 
     return data
 '''

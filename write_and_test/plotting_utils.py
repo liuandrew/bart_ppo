@@ -11,6 +11,11 @@ from sklearn.metrics import r2_score
 File for helping with some plotting functions
 '''
 
+bart_plot_colors = {0: 'deep red', 
+                    1: 'orange', 
+                    2: 'goldenrod',
+                    3: 'gray',
+                    4: 'pink'}
 
 def set_rc():
     '''Set rc params to be ready for paper polished plots'''
