@@ -147,29 +147,35 @@ def find_decision_nodes(res, model, ep=0):
     ends = np.array(res['data']['balloon_step'][ep])
     end_presses = np.intersect1d(presses, ends)
     penult_steps = end_presses - 1
-    
+
+    nsteps = len(penult_steps)
     o = res['obs'][ep][0]
-    rnn_hx_mod = torch.tensor(np.zeros((64*len(penult_steps), 64)), dtype=torch.float)
-    obs = torch.tensor(np.zeros((64*len(penult_steps), o.shape[0])), dtype=torch.float)
+    rnn_hx_mod = torch.tensor(np.zeros((nsteps, 64, 64)), dtype=torch.float)
+    obs = torch.tensor(np.zeros((nsteps, 64, o.shape[0])), dtype=torch.float)
     masks = torch.tensor(res['masks'][ep][0])
-    probs = np.zeros(len(penult_steps))
+    probs = np.zeros(nsteps)
+
     for i, step in enumerate(penult_steps):
         rnn_hx = res['rnn_hxs'][ep][step]
         o = res['obs'][ep][step]
         probs[i] = res['action_probs'][ep][step][1]
-        
-        rnn_hx_mod[i*64:(i+1)*64] = torch.tensor(rnn_hx)
-        obs[i*64:(i+1)*64] = torch.tensor(o)
         delt_rnn = res['rnn_hxs'][ep][step+1] - res['rnn_hxs'][ep][step]
         delt_rnn = torch.tensor(np.sign(delt_rnn)*2)
-        for j in range(64):
-            rnn_hx_mod[i*64+j, j] += delt_rnn[j]
         
+        
+        for j in range(64):
+            rnn_hx_mod[i, j] = torch.tensor(rnn_hx)
+            obs[i, j] = torch.tensor(o)
+            
+        for j in range(64):
+            rnn_hx_mod[i, j, j] += delt_rnn[j]
+    
+    obs = obs.reshape(64*nsteps, o.shape[0])
+    rnn_hx_mod = rnn_hx_mod.reshape(64*nsteps, 64)
     output = model.act(obs, rnn_hx_mod, masks)
     p = output['probs'][:, 1].detach()
-    p = np.array(p).reshape(64, -1)
-    scores = p - probs
-    scores = np.mean(scores, axis=1)
+    p = np.array(p).reshape(nsteps, 64)
+    scores = (p - probs.reshape(-1, 1)).mean(axis=0)
     decision_nodes = scores > 0.2
     return decision_nodes
 
@@ -206,8 +212,8 @@ def measure_rnn_influence(res, model, ep, step, decision_nodes=None, ap=False,
     shared0 = torch.tensor(np.full((size, 64,), shared0))
     actor0 = torch.tensor(np.full((size, 64,), actor0))
 
-    # next_rnn_hx = model.base._forward_gru(shared0, rnn_hx_mod, masks)[0]
-    next_rnn_hx = model.base._forward_gru(obs, rnn_hx_mod, masks)[0]
+    next_rnn_hx = model.base._forward_gru(shared0, rnn_hx_mod, masks)[0]
+    # next_rnn_hx = model.base._forward_gru(obs, rnn_hx_mod, masks)[0]
     actor0mod = model.base.actor0(next_rnn_hx)
 
     delt_actor0 = (actor0mod - actor0).detach()
