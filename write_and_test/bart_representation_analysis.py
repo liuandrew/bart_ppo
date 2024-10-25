@@ -67,15 +67,20 @@ def get_sizes(res, obs_rms):
         sizes.append(obs[:, 5].round(2))
     return sizes
 
-def comb_pca(res, layer='shared1', n_components=10):
+def comb_pca(res, layer='shared1', n_components=10, eps=None):
     """
     Perform PCA on a layer of activations
     Combines all episodes in the res call and returns PCAs back in
         per episode format
+    eps: if passing a list of eps, use those instead of all episodes to form PCA
     """
     activ = res['activations'][layer]
-    ep_lens = [len(a) for a in activ]
-    all_activ = torch.vstack(activ)
+    if eps is not None:
+        ep_lens = [len(activ[e]) for e in eps]
+        all_activ = torch.vstack([activ[e] for e in eps])
+    else:
+        ep_lens = [len(a) for a in activ]
+        all_activ = torch.vstack(activ)
     pca = PCA(n_components=n_components)
     all_pca_a = pca.fit_transform(all_activ)
     pca_as = []
@@ -87,6 +92,32 @@ def comb_pca(res, layer='shared1', n_components=10):
         
     return pca_as
 
+
+def comb_bottleneck(res, model, layer='shared1', eps=None):
+    """
+    Perform PCA on a layer of activations
+    Combines all episodes in the res call and returns PCAs back in
+        per episode format
+    eps: if passing a list of eps, use those instead of all episodes to form PCA
+    """
+    activ = res['activations'][layer]
+    if eps is not None:
+        ep_lens = [len(activ[e]) for e in eps]
+        all_activ = torch.vstack([activ[e] for e in eps])
+    else:
+        ep_lens = [len(a) for a in activ]
+        all_activ = torch.vstack(activ)
+        
+    _, all_pca_a = model(all_activ)
+    all_pca_a = all_pca_a.detach()
+    pca_as = []
+
+    cur_step = 0
+    for ep_len in ep_lens:
+        pca_as.append(all_pca_a[cur_step:cur_step+ep_len])
+        cur_step += ep_len
+        
+    return pca_as
 """
 
 Ramp to threshold decision process
@@ -225,6 +256,53 @@ def measure_rnn_influence(res, model, ep, step, decision_nodes=None, ap=False,
         return delt_actor0, probs
 
     return delt_actor0
+
+
+
+"""
+
+Behavior scoring
+
+Functions to score behavior on meta trials
+
+"""
+
+def score_unconfidence(res, ep=None, method=1):
+    """
+    Score unconfidence based on action probability on non button press steps
+    Can pass an episode of list of episodes to score specific episodes
+    method:
+        0: take all steps where button was not pressed
+        1: take all steps where ap < 0.5
+    """
+    if ep is not None:
+        if type(ep) == int:
+            ep = [ep]
+        non_presses = (np.vstack([res['actions'][e] for e in ep]) == 0).reshape(-1)
+        aps = np.vstack([res['action_probs'][e] for e in ep])[:, 1]
+    else:
+        non_presses = (np.vstack(res['actions']) == 0).reshape(-1)
+        aps = np.vstack(res['action_probs'])[:, 1]
+        
+    if method == 0:
+        unconfidence_score = aps[non_presses].mean()
+    elif method == 1:
+        unconfidence_score = aps[aps < 0.5].mean()
+
+    return unconfidence_score
+
+def compute_true_returns(rew, gamma=0.99):
+    """
+    Given a sequence of rewards, compute the actual returns experienced
+    by the agent
+    """
+    returns = np.zeros(len(rew))
+    cur_g = 0
+    for i in range(len(rew)):
+        cur_g = cur_g*0.99 + rew[len(rew)-i-1]
+        returns[len(rew)-i-1] = cur_g
+    return returns
+    
 """
 
 Line fitting

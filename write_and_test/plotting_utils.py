@@ -106,6 +106,28 @@ def rgb_to_hex(rgb, scaleup=True):
 hex_colors = [rgb_to_hex(color) for color in rgb_colors]
 
 
+def get_color_from_colormap(value, a, b, cmap_name='viridis', to_hex=True):
+    """
+    Function to return a color in RGB or hex from a colormap for a given value in range [a, b].
+    
+    Parameters:
+    - value: float, the input number in the range [a, b].
+    - a: float, start of the range.
+    - b: float, end of the range.
+    - cmap_name: str, the name of the colormap to use (default is 'viridis').
+    - to_hex: bool, if True returns color in hex format, else in RGB.
+    
+    Returns:
+    - color: tuple or str, the color in RGB (tuple) or hex (str) format.
+    """
+    norm_value = (value - a) / (b - a)
+    cmap = pplt.Colormap(cmap_name)
+    rgb_color = cmap(norm_value)
+    if to_hex:
+        return pplt.to_hex(rgb_color)
+    else:
+        return rgb_color
+
 
 from scipy.stats import ttest_ind
 
