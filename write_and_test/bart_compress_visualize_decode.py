@@ -14,9 +14,15 @@ from sklearn.metrics import f1_score
 
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression, Lasso, LassoCV
-from tslearn.preprocessing import TimeSeriesScalerMeanVariance
-from sklearn.metrics import silhouette_score, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
+from tslearn.preprocessing import TimeSeriesScalerMeanVariance
+from sklearn.metrics import (
+    silhouette_score, 
+    mean_squared_error, 
+    root_mean_squared_error,
+    r2_score
+)
+    
 
 
 pplt.rc.update({'font.size': 10})
@@ -71,6 +77,49 @@ def get_impulsivity_data(res, impulsive_thres=0.2, ep=None, layer='shared1',
         'imp_steps': imp_steps
     }
 
+    
+def get_data_from_summary(res, idx, use_longer_keys=False):
+    lens = res['all_lens'][idx]
+    values = res['values'][idx]
+    action_probs = res['action_probs'][idx]
+    bsizes = [np.mean(b[b != 0]) for b in res['last_sizes'][idx]]
+
+    vs = []
+    aps = []
+    final_vs = []
+    final_errs = []
+    for ep in range(17):
+        l = int(lens[ep])
+        v = values[ep][:l]
+        ap = action_probs[ep][:l]
+        steps = np.arange(len(ap))
+        imp_steps = ap < 0.5
+        x = steps[imp_steps]
+        smoothed_ap = pd.Series(ap[imp_steps]).ewm(alpha=0.01).mean()
+        smoothed_v = pd.Series(v[imp_steps]).ewm(alpha=0.01).mean()
+        final_vs.append(smoothed_v.iloc[-1])
+        final_errs.append(smoothed_ap.iloc[-1])
+        vs.append(v)
+        aps.append(ap)
+    if use_longer_keys:
+        return {
+            'values': vs,
+            'action_prob': aps,
+            'final_v': final_vs,
+            'final_err': final_errs,
+            'bsizes': bsizes,
+        }
+    else:
+        return {
+            'v': vs,
+            'ap': aps,
+            'final_v': final_vs,
+            'final_err': final_errs,
+            'bsizes': bsizes,
+        }
+
+    
+
 
 def split_by_ep(res, data):
     '''After combining steps, return back to episode based split'''
@@ -97,11 +146,15 @@ into this area
 
 '''
 
-def get_cluster_activations(activ, kmeans=None, k=5):
+def get_cluster_activations(res, layer='shared1', kmeans=None, k=5, orientation=None,
+                            random_state=0):
     '''
     Use kmeans on hidden state data to cluster the data after scaling
     km: if passed, use an already fit KMeans model, rather than fitting a new one
     '''
+    activ = np.vstack(res['activations'][layer])
+    if orientation is not None:
+        activ = activ * orientation
     data = activ.T  # change to [64, T]
     scaler = TimeSeriesScalerMeanVariance()
     data_normalized = scaler.fit_transform(data[:, :, np.newaxis])  # Shape becomes [64, T, 1]
@@ -151,7 +204,7 @@ def find_k_cluster_activations(res, layer='shared1', require_ap_explained=True):
         silhouette_scores.append(silhouette_avg)
 
         # Test how good the cluster compression explains behavior
-        cluster_activations, _, _ = get_cluster_activations(activ, kmeans)
+        cluster_activations, _, _ = get_cluster_activations(res, layer, kmeans)
         lr = LinearRegression()
         lr.fit(cluster_activations, ap)
         ypred = lr.predict(cluster_activations)
@@ -162,12 +215,88 @@ def find_k_cluster_activations(res, layer='shared1', require_ap_explained=True):
     
     # Ensure that enough info is kept in clusters to keep r2 prediction high
     if require_ap_explained:
-        min_r2_idx = np.argmax(r2_scores > 0.8*best_r2)
+        min_r2_idx = np.argmax(r2_scores > 0.7*best_r2)
         best_k = np.argmax(silhouette_scores[min_r2_idx:]) + min_r2_idx + 2
     else:
         best_k = np.argmax(silhouette_scores) + 2
         
     return best_k
+
+
+
+
+def kmeans_oriented_activations(res, layer='shared1', require_ap_explained=True):
+    '''
+    Perform k-means but also flip activations to allow for reversed activations to cluster
+    together. Automatically determine the appropriate orientations of each nodes activity
+    according to which orientation has better clustering
+    '''
+    imp = get_impulsivity_data(res, layer=layer, load_global=False)
+    activ = imp['activ']
+    ap = imp['ap'].reshape(-1, 1)
+    combactiv = np.hstack([activ, -activ])
+    data = combactiv.T
+    scaler = TimeSeriesScalerMeanVariance()
+    data_normalized = scaler.fit_transform(data[:, :, np.newaxis])  # Shape becomes [64, T, 1]
+    data_normalized = data_normalized.squeeze()  # Back to shape [64, T]
+
+
+    max_k = 20  # Maximum number of clusters to try
+    silhouette_scores = []
+    r2_scores = []
+    ks = range(2, max_k + 1)
+
+    lr = LinearRegression()
+    lr.fit(activ, ap)
+    ypred = lr.predict(activ)
+    best_r2 = r2_score(ap, ypred)
+
+    for k in ks:
+        kmeans = KMeans(n_clusters=k, random_state=0)
+        labels = kmeans.fit_predict(data_normalized)
+        silhouette_avg = silhouette_score(data_normalized, labels)
+        silhouette_scores.append(silhouette_avg)
+
+        # Test how good the cluster compression explains behavior
+        cluster_activations, _, _ = get_cluster_activations(res, layer, kmeans)
+        lr = LinearRegression()
+        lr.fit(cluster_activations, ap)
+        ypred = lr.predict(cluster_activations)
+        r2_scores.append(r2_score(ap, ypred))
+    r2_scores = np.array(r2_scores)
+    silhouette_scores = np.array(silhouette_scores)
+    
+    # Ensure that enough info is kept in clusters to keep r2 prediction high
+    if require_ap_explained:
+        min_r2_idx = np.argmax(r2_scores > 0.7*best_r2)
+        best_k = np.argmax(silhouette_scores[min_r2_idx:]) + min_r2_idx + 2
+    else:
+        best_k = np.argmax(silhouette_scores) + 2
+    
+    # Orient activations
+    cluster_activ, labels, kmeans = get_cluster_activations(res, layer, k=best_k)
+    orientation = []
+    labels = []
+    for i in range(64):
+        right_dist = np.linalg.norm(kmeans.cluster_centers_ - activ[:, i], axis=1)
+        left_dist = np.linalg.norm(kmeans.cluster_centers_ + activ[:, i], axis=1)
+
+        if right_dist.min() < left_dist.min():
+            orientation.append(1)
+            labels.append(np.argmin(right_dist))
+        else:
+            orientation.append(-1)
+            labels.append(np.argmin(left_dist))
+            
+    orientation = np.array(orientation)
+    # Prune any clusters that remain unused
+    labels = np.array(labels)
+    cluster_counts = [(labels == i).sum() for i in range(7)]
+    new_k = (np.array(cluster_counts) != 0).sum()
+    cluster_activations, labels, kmeans = get_cluster_activations(res, layer, k=new_k,
+                                                                  orientation=orientation)
+    return new_k, cluster_activations, labels, kmeans, orientation
+        
 
 
 
@@ -238,7 +367,9 @@ or how compressed activities change with the different balloon conditions
 '''
 
 
-def visualize_cluster_activations(res, klabels, ep=8, layer='shared1'):
+def visualize_cluster_activations(res, klabels, ep=8, layer='shared1', 
+                                  orientation=None, normalize=True,
+                                  step1=100, step2=200):
     '''
     Visualize the compositionn of each cluster across a single episode
     '''
@@ -246,8 +377,19 @@ def visualize_cluster_activations(res, klabels, ep=8, layer='shared1'):
     if k > 20:
         print('k > 20, not creating plot')
         return None
+    if orientation is None:
+        orientation = np.ones(len(klabels))
 
-    activ = res['activations'][layer][ep]
+    if normalize:
+        activ = np.vstack(res['activations'][layer])
+        activ = (activ * orientation).T
+        scaler = TimeSeriesScalerMeanVariance()
+        activ = scaler.fit_transform(activ[:, :, np.newaxis])
+        activ = activ.squeeze().T  # Back to shape [T, 64]
+    else:
+        activ = np.vstack(res['activations'][layer]) * orientation
+    activ = split_by_ep(res, activ)[ep]
+    
     cluster_data = [activ[:, klabels == i] for i in range(k)]
     fig, axs = pplt.subplots(nrows=k, sharex=True, sharey=True, 
                              figwidth=5, refaspect=4)
@@ -256,8 +398,8 @@ def visualize_cluster_activations(res, klabels, ep=8, layer='shared1'):
         ax.format(title=f'Cluster {i}')
         
         for j in range(cluster_data[i].shape[1]):
-            ax.plot(cluster_data[i][:, j], alpha=0.5)
-        ax.plot(cluster_data[i].mean(axis=1), c='black')
+            ax.plot(cluster_data[i][step1:step2, j], alpha=0.5)
+        ax.plot(cluster_data[i].mean(axis=1)[step1:step2], c='black')
     fig.format(suptitle='Time Series Clusters Visualization', xlabel='Time', ylabel='Normalized Value')
 
 
@@ -382,7 +524,8 @@ def visualize_smoothed_pca_episodes(res, n_components=3, layer='shared1',
         
         
             
-def visualize_episode_values(res, color_by_mu=False, minimal_size_coverage=False):
+def visualize_episode_values(res, color_by_mu=False, minimal_size_coverage=False,
+                             cbar_label=False, ax=None):
     '''
     Visualize how the agent's value prediction looks
     '''
@@ -404,7 +547,8 @@ def visualize_episode_values(res, color_by_mu=False, minimal_size_coverage=False
         vmin = np.min(bsizes)
         vmax = np.max(bsizes) + 0.05
         
-    fig, ax = pplt.subplots()
+    if ax is None:
+        fig, ax = pplt.subplots()
     for j, ep in enumerate(ep_idxs):
         s = bsizes[j]
         c = get_color_from_colormap(s, vmin, vmax, to_hex=False)
@@ -413,10 +557,49 @@ def visualize_episode_values(res, color_by_mu=False, minimal_size_coverage=False
     ax.format(xlabel='time step', ylabel='Value prediction')
     norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
-    cbar = fig.colorbar(sm)
-    cbar.set_label(label='$\mu$', rotation=0, labelpad=10)
+    cbar = ax.colorbar(sm)
+    if cbar_label:
+        cbar.set_label(label='$\mu$', rotation=0, labelpad=10)
     
 
+def visualize_episode_values_from_summary(res, idx, with_erratic=True,
+                                          color_by_mu=False, cbar_label=False,
+                                          ax=None):
+    r = get_data_from_summary(res, idx)
+    bsizes = r['bsizes']
+    if color_by_mu:
+        bsizes = np.arange(0.2, 1.01, 0.05)
+        vmin = 0.2
+        vmax = 1
+    else:
+        vmin = np.min(bsizes)
+        vmax = np.max(bsizes) + 0.05
+        
+    if ax is None:
+        ncols = 2 if with_erratic else 1
+        fig, ax = pplt.subplots(ncols=ncols, sharey=False)
+    for j, ep in enumerate(range(17)):
+        s = bsizes[j]
+        c = get_color_from_colormap(s, vmin, vmax, to_hex=False)
+        ax_ = ax[1] if with_erratic else ax
+        ax_.plot(list(pd.Series(r['v'][ep].reshape(-1)).ewm(alpha=0.1).mean()), 
+                c=c, alpha=0.5)
+        ax_.format(xlabel='time step', ylabel='Value prediction')
+
+        if with_erratic:
+            ap = r['ap'][ep]
+            steps = np.arange(len(ap))
+            imp_steps = ap < 0.5
+            x = steps[imp_steps]
+            smoothed_ap = pd.Series(ap[imp_steps]).ewm(alpha=0.01).mean()
+            ax[0].plot(x, smoothed_ap, c=c, alpha=0.5)
+            
+    norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
+    ax_ = ax[1] if with_erratic else ax
+    cbar = ax_.colorbar(sm)
+    if cbar_label:
+        cbar.set_label(label='$\mu$', rotation=0, labelpad=10)
 
 
 def visualize_smoothed_nn_episodes(res, nn_model, layer='shared1',
@@ -472,6 +655,36 @@ def visualize_smoothed_nn_episodes(res, nn_model, layer='shared1',
     for i in range(n):
         ax[i].format(ylabel=f'PCA {i+1}')
 
+
+
+def visualize_regressor_coefficients(coefs, by_clusters=True, ax=None,
+                                     legend=True):
+    '''
+    Visualize the coefficients found for each of the regression models
+    coefs: should be of shape [3, N] where N is the number of clusters/PCAs
+    by_clusters: just used for labeling
+    '''
+    if ax is None:
+        fig, ax = pplt.subplots(refaspect=4, figwidth=6)
+    labels = ['Ramp', 'Value', 'Impulsivity']
+    for i, coef in enumerate(coefs):
+        k = len(coef)
+        x = np.arange(k)+i*0.2
+        idxs = coef != 0
+        y = np.abs(coef)
+        y[~idxs] = 0
+        ax.bar(x, y, width=0.15, label=labels[i])
+        
+    xlabel = 'Cluster number' if by_clusters else 'PCA'
+    ax.format(xlocator=np.arange(10)+0.2,
+            xformatter=[str(x) for x in range(1, 11)],
+            xlabel=xlabel,
+            ylabel='Coefficient',
+            title='Coefficients for regressors')
+    if legend:
+        ax.legend(loc='ur')
+    return ax
+
 '''
 
 Activity decoding methods
@@ -520,3 +733,69 @@ def train_lasso_with_value_for_impulsivity(res, activ=None, alpha=1e-3, impulsiv
     # Filter out features with non-zero coefficients
     significant_features = coef_df[coef_df['Coefficient'] != 0]
     return significant_features
+
+
+
+def compute_regressor_coefficients(res, layer='shared1', by_clusters=True):
+    '''
+    Generate coefficients for regression models to explain different portions of
+    behavior in meta bart agents
+    by_clusters: if True, use kmeans clustering
+        else, use PCA components
+    '''
+    
+    if by_clusters:
+        # Perform kmeans on the activities of shared layer
+        k = find_k_cluster_activations(res, layer=layer)
+        cluster_activ, labels, kmeans = get_cluster_activations(res, layer=layer, k=k)
+        # Scale new cluster compressed activations
+        scaler = TimeSeriesScalerMeanVariance()
+        cluster_norm = scaler.fit_transform(cluster_activ[:, :, np.newaxis])
+        cluster_norm = cluster_norm.reshape(cluster_activ.shape)
+    else:
+        cluster_activ = np.vstack(comb_pca(res, n_components=6, layer=layer))
+        scaler = TimeSeriesScalerMeanVariance()
+        cluster_norm = scaler.fit_transform(cluster_activ[:, :, np.newaxis])
+        cluster_norm = cluster_norm.reshape(cluster_activ.hape)
+        
+    # Set up data
+    actions = np.vstack(res['actions'])
+    imp = get_impulsivity_data(res, layer=layer, load_global=False)
+    values = imp['v']
+    ap = imp['ap']
+    imp_steps = imp['imp_steps']
+    impuls = ap[imp_steps]
+    impuls = np.log(impuls)
+    # activ = imp['activ']
+    # comb_activ = np.hstack([values, cluster_norm])
+
+    # Measure coefficient importances for each cluster of activity
+
+    # Decision ramp model
+    act_model = LogisticRegression(penalty='l1', solver='liblinear', C=0.001)
+    act_model.fit(cluster_norm, actions)
+    ypred = act_model.predict(cluster_norm)
+    act_score = f1_score(actions.reshape(-1), ypred)
+    act_coef = act_model.coef_[0]
+
+    # Value model
+    val_model = Lasso(alpha=0.01)
+    val_model.fit(cluster_norm, values)
+    ypred = val_model.predict(cluster_norm)
+    val_score = r2_score(values, ypred)
+    val_coef = val_model.coef_
+
+    # Impulsivity model
+    if len(impuls) == 0:
+        imp_score = 0
+        imp_coef = np.zeros(val_coef.shape)
+    else:
+        imp_model = LassoCV(cv=10, random_state=0, max_iter=100000, tol=0.001,
+                        alphas=np.logspace(-1, 0, 100))
+        imp_model.fit(cluster_norm[imp_steps, :], impuls)
+        ypred = imp_model.predict(cluster_norm[imp_steps, :])
+        imp_score = r2_score(impuls, ypred)
+        imp_coef = imp_model.coef_
+    coefs = np.vstack([act_coef, val_coef, imp_coef])
+    scores = np.array([act_score, val_score, imp_score])
+    return coefs, scores

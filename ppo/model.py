@@ -138,7 +138,8 @@ class Policy(nn.Module):
 
 
 class NNBase(nn.Module):
-    def __init__(self, recurrent, recurrent_input_size, hidden_size):
+    def __init__(self, recurrent, recurrent_input_size, hidden_size,
+                 vanilla_rnn=False):
         super(NNBase, self).__init__()
 
         self._hidden_size = hidden_size
@@ -148,7 +149,10 @@ class NNBase(nn.Module):
         self.auxiliary_output_size = 0
 
         if recurrent:
-            self.gru = nn.GRU(recurrent_input_size, hidden_size)
+            if vanilla_rnn:
+                self.gru = nn.RNN(recurrent_input_size, hidden_size)
+            else:
+                self.gru = nn.GRU(recurrent_input_size, hidden_size)
             for name, param in self.gru.named_parameters():
                 if 'bias' in name:
                     nn.init.constant_(param, 0)
@@ -299,8 +303,10 @@ class DelayedRNNPPO(NNBase):
     2 layers of actor critic split
     '''
     def __init__(self, num_inputs, hidden_size=64,
-                auxiliary_heads=[], recurrent=True):
-        super(DelayedRNNPPO, self).__init__(True, hidden_size, hidden_size)
+                auxiliary_heads=[], recurrent=True,
+                vanilla_rnn=False, critic_fix=False):
+        super(DelayedRNNPPO, self).__init__(True, hidden_size, hidden_size,
+                                            vanilla_rnn)
         # parameters create self.GRU with hidden_size as recurrent_input_size and
         #  hidden_size as recurrent_hidden_size
         
@@ -366,6 +372,8 @@ class DelayedRNNPPO(NNBase):
         else:
             self.has_auxiliary = True
             
+        self.critic_fix = critic_fix # an issue found where critic layer 0 is disconnected
+            # but we haven't trained models with the fix atm
         self.train()
         
         
@@ -403,8 +411,12 @@ class DelayedRNNPPO(NNBase):
         actor_x = self.actor1(actor_x)
         actor_activations.append(actor_x)
         
+        
         critic_x = self.critic0(x)
         critic_activations.append(critic_x)
+        # if self.critic_fix:
+        #     critic_x = self.critic1(critic_x)
+        # else:
         critic_x = self.critic1(x)
         critic_activations.append(critic_x)
                     

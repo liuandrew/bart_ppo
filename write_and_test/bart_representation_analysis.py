@@ -6,12 +6,19 @@ import numpy as np
 import pandas as pd
 from plotting_utils import rgb_colors
 import torch
+import pickle
+from model_evaluation import (
+    forced_action_evaluate_multi,
+    meta_bart_multi_callback,
+    reshape_parallel_evalu_res,
+)
 
 from sklearn.decomposition import PCA
 from scipy.stats import skew, kurtosis
 from scipy.optimize import curve_fit
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
+from functools import partial
 
 pplt.rc.update({'font.size': 10})
 
@@ -23,6 +30,70 @@ bart_plot_colors = {0: 'deep red',
                     1: 'orange', 
                     2: 'goldenrod'}
 
+"""
+
+MetaBart Evaluation functions
+
+
+"""
+
+size = np.arange(0.2, 1.01, 0.05)
+env_kwargs = [{'meta_setup': 1, 'colors_used': 1, 
+                            'max_steps': 2500, 'num_balloons': 50,
+                            'inflate_noise': 0,
+                            'fix_sizes': [0, s, 0]} for s in size]
+give_env_kwargs = [{'meta_setup': 1, 'colors_used': 1, 
+                            'max_steps': 2500, 'num_balloons': 50,
+                            'inflate_noise': 0, 'give_rew': True,
+                            'fix_sizes': [0, s, 0]} for s in size]
+
+evalu_ = partial(forced_action_evaluate_multi, data_callback=meta_bart_multi_callback,
+                env_name="BartMetaEnv", num_episodes=1, 
+                env_kwargs=env_kwargs, 
+                num_processes=17,
+                seed=1,
+                deterministic=False,
+                with_activations=True)
+give_evalu_ = partial(forced_action_evaluate_multi, data_callback=meta_bart_multi_callback,
+                env_name="BartMetaEnv", num_episodes=1, 
+                env_kwargs=give_env_kwargs, 
+                num_processes=17,
+                seed=1,
+                deterministic=False,
+                with_activations=True)
+
+
+def evalu(model, obs_rms, give_rew=False):
+    if give_rew:
+        res = give_evalu_(model, obs_rms)
+    else:
+        res = evalu_(model, obs_rms)
+    res = reshape_parallel_evalu_res(res, meta_balloons=50)
+    return res
+
+
+def metabart_model_load(idx=None, h=None, i=None, j=None, k=None, l=None):
+    if idx is not None:
+        h, i, j, k, l = idx
+    give_rew = ['', 'giverew_']
+    postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
+    models = [1.0, 1.2, 1.5, 1.7, 2.0]
+    trials = range(3)
+    chks = np.arange(10, 243, 30)
+
+    give = give_rew[h]
+    postfix = postfixes[i]
+    model = models[j]
+    t = k
+    chk = chks[l]
+    
+    if h == 1 and postfix == '':
+        postfix = 'pop0'
+    exp_name = f"{give}p{model}n50{postfix}"
+    model, (obs_rms, ret_rms) = \
+        torch.load(f'../saved_checkpoints/meta_v2/{exp_name}_{t}/{chk}.pt')
+
+    return model, obs_rms
 """
 
 Misc Helper Functions
@@ -56,7 +127,7 @@ def unnormalize_obs(obs, obs_rms):
     """
     return (obs * np.sqrt(obs_rms.var + 1e-8)) + obs_rms.mean
 
-def get_sizes(res, obs_rms):
+def get_sizes(res, obs_rms, last_only=False):
     """
     Additional simplification from unnormalize_obs, get sizes directly from 
     observations by unnormalizing
@@ -64,7 +135,11 @@ def get_sizes(res, obs_rms):
     sizes = []
     for ep in range(len(res['obs'])):
         obs = unnormalize_obs(res['obs'][ep], obs_rms)
-        sizes.append(obs[:, 5].round(2))
+        if last_only:
+            bsteps = res['data']['balloon_step'][ep]
+            sizes.append(obs[bsteps, 5].round(2))
+        else:
+            sizes.append(obs[:, 5].round(2))
     return sizes
 
 def comb_pca(res, layer='shared1', n_components=10, eps=None):
@@ -118,6 +193,147 @@ def comb_bottleneck(res, model, layer='shared1', eps=None):
         cur_step += ep_len
         
     return pca_as
+
+
+"""
+
+Model/data loading functions
+
+"""
+
+
+## Code used to generate the best indexes for later analysis
+# res = pickle.load(open('data/meta_representation_results', 'rb'))
+# all_rew = res['rewards']
+# best_idxs = all_rew.sum(axis=(5, 6)).argmax(axis=-1)
+# pickle.dump(best_idxs, open('data/meta_representation_best_idxs', 'wb'))
+
+def select_idxs(arr, by='best', idxs=None, axis=-1):
+    '''
+    Used to select with the best agent idxs from combined results
+    by: method of selecting agents
+        'best': best agent across tested checkpoints
+        'first': first agent to reach >275 total banked size
+        'close': closest agent to reach 275 total banked size
+    If idxs is None, use the saved best indexes
+    '''
+    if idxs is None:
+        if by == 'best':
+            idxs = pickle.load(open('data/meta_representation_best_idxs', 'rb'))
+        elif by == 'first': 
+            idxs = pickle.load(open('data/meta_representation_first_idxs', 'rb'))
+        elif by == 'close': 
+            idxs = pickle.load(open('data/meta_representation_close_idxs', 'rb'))
+    return np.take_along_axis(arr, 
+                              np.expand_dims(idxs, axis=axis),
+                              axis=axis).squeeze(axis=axis)
+
+                              
+def select_chks(arr, by='first'):
+    '''
+    Similar to select_idxs but instead convert each index in the arr to a tuple including
+    the chk index
+    '''
+    if by == 'best':
+        idxs = pickle.load(open('data/meta_representation_best_idxs', 'rb'))
+    elif by == 'first': 
+        idxs = pickle.load(open('data/meta_representation_first_idxs', 'rb'))
+    elif by == 'close': 
+        idxs = pickle.load(open('data/meta_representation_close_idxs', 'rb'))
+
+    new_idxs = [i + (idxs[i],) for i in arr]
+    return new_idxs
+
+def select_chks_by_dimension(h=None, i=None, j=None, by='first'):
+    '''
+    Get all indices of models including checkpoints selected by "by", fixing the dimensions provided
+    dim:
+        h: fix give_rew dimension
+        i: fix pop punishment dimension
+        j: fix p dimension
+    '''
+    it1 = range(2)
+    it2 = range(4)
+    it3 = range(5)
+    trials = range(3)
+        
+    if h is not None:
+        it1 = [h]
+    if i is not None:
+        it2 = [i]
+    if j is not None:
+        it3 = [j]
+    
+    idxs = (list(itertools.product(it1, it2, it3, trials)))
+    idxs = [tuple(i) for i in idxs]
+
+    return select_chks(idxs)
+    
+    
+    
+def select_random_model(size=1, by='first', seed=None, load_models=False):
+    '''
+    Randomly select a tested model, picking a specific checkpoint
+    corresponding to by: 'first'/'best'/'close'
+    '''
+    if by == 'best':
+        idxs = pickle.load(open('data/meta_representation_best_idxs', 'rb'))
+    elif by == 'first': 
+        idxs = pickle.load(open('data/meta_representation_first_idxs', 'rb'))
+    elif by == 'close': 
+        idxs = pickle.load(open('data/meta_representation_close_idxs', 'rb'))
+    total_size = np.prod(idxs.shape)
+    models = np.random.choice(np.arange(total_size), size=size, replace=False)
+    models = [np.unravel_index(model, idxs.shape) for model in models]
+    model_idxs = [model + (idxs[model],) for model in models]
+
+    if load_models:
+        models = []
+        obs_rmss  = []
+        rs = []
+        for idx in model_idxs:
+            h = idx[0]
+            model, obs_rms = metabart_model_load(idx)
+            give_rew = True if h == 1 else False
+            
+            r = evalu(model, obs_rms, give_rew)
+            models.append(model)
+            obs_rmss.append(obs_rms)
+            rs.append(r)
+        
+        if size == 1:
+            return model_idxs[0], models[0], obs_rmss[0], rs[0]
+        return model_idxs, models, obs_rmss, rs
+    if size == 1:
+        return model_idxs[0]
+    return model_idxs
+
+
+
+def metabart_model_load(idx=None, h=None, i=None, j=None, k=None, l=None):
+    '''Load a model either by index (following data collection methods) or
+    by explicitly passing h,i,j,k,l in the same way expected by the index'''
+    if idx is not None:
+        h, i, j, k, l = idx
+    give_rew = ['', 'giverew_']
+    postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
+    models = [1.0, 1.2, 1.5, 1.7, 2.0]
+    trials = range(3)
+    chks = np.arange(10, 243, 30)
+
+    give = give_rew[h]
+    postfix = postfixes[i]
+    model = models[j]
+    t = k
+    chk = chks[l]
+    
+    if h == 1 and postfix == '':
+        postfix = 'pop0'
+    exp_name = f"{give}p{model}n50{postfix}"
+    model, (obs_rms, ret_rms) = \
+        torch.load(f'../saved_checkpoints/meta_v2/{exp_name}_{t}/{chk}.pt')
+    return model, obs_rms
+
 """
 
 Ramp to threshold decision process
@@ -259,6 +475,91 @@ def measure_rnn_influence(res, model, ep, step, decision_nodes=None, ap=False,
 
 
 
+def score_decision_flow(res, model, large_kick=False):
+    scores = []
+    all_dec_nodes = np.full((17, 64), False)
+    for ep in range(17):
+        presses = np.argwhere((res['actions'][ep] == 1).reshape(-1)).reshape(-1)
+        ends = np.array(res['data']['balloon_step'][ep])
+        end_presses = np.intersect1d(presses, ends)
+        penult_steps = end_presses - 1
+        decision_nodes = find_decision_nodes(res, model, ep)
+        all_dec_nodes[ep] = decision_nodes
+        if decision_nodes.sum() == 0:
+            scores.append(np.array([0., 0.]))
+            continue
+        delt_actor0, delt_rnn_sizes = measure_rnn_influence_multi(res, model, ep, penult_steps,
+                                                  decision_nodes=decision_nodes,
+                                                  large_kick=large_kick)
+        # scores.append(np.abs(delt_actor0).mean(axis=0).var(axis=1).numpy())
+        score = np.abs(delt_actor0).mean(axis=(0, 2))
+        score[0] = score[0] / decision_nodes.sum()
+        score[1] = score[1] / (~decision_nodes).sum()
+        scores.append(score)
+        
+    scores = np.vstack(scores)
+    
+    return scores, all_dec_nodes
+
+    
+
+def measure_rnn_influence_multi(res, model, ep, steps, decision_nodes=None, ap=False,
+                          large_kick=False):
+    '''Measure how much influence individual nodes or group of nodes have on a certain step
+    
+    decision_nodes: pass boolean array of size 64 to differentiate decision and non-decision nodes
+    ap: if True, compute the influence on action probabilities
+    '''
+    nsteps = len(steps)
+
+    if decision_nodes is not None:
+        size = 2
+    else:
+        size = 64
+    
+    delt_rnn_sizes = torch.zeros((nsteps, size, 64))
+    rnn_hx_mod = torch.zeros((nsteps, size, 64))
+    shared0 = torch.zeros((nsteps, size, 64))
+    actor0 = torch.zeros((nsteps, size, 64))
+    masks = np.array([1.], dtype='float32')
+    for i, step in enumerate(steps):
+        rnn_hx = torch.tensor(res['rnn_hxs'][ep][step])
+        delt_rnn = torch.tensor(res['rnn_hxs'][ep][step+1] - res['rnn_hxs'][ep][step])
+        if large_kick:
+            delt_rnn = np.sign(delt_rnn) * 1
+
+        for j in range(size):
+            rnn_hx_mod[i, j] = rnn_hx
+            shared0[i, j] = res['activations']['shared0'][ep][step]
+            actor0[i, j] = res['activations']['actor0'][ep][step]
+        if decision_nodes is not None:
+            rnn_hx_mod[i, 0, decision_nodes] += delt_rnn[decision_nodes]
+            rnn_hx_mod[i, 1, ~decision_nodes] += delt_rnn[~decision_nodes]
+            delt_rnn_sizes[i, 0, decision_nodes] += delt_rnn[decision_nodes]
+            delt_rnn_sizes[i, 1, ~decision_nodes] += delt_rnn[~decision_nodes]
+        else:
+            for j in range(size):
+                rnn_hx_mod[i, j, j] += delt_rnn[j]
+
+    rnn_hx_mod = rnn_hx_mod.reshape(nsteps*size, 64)
+    shared0 = shared0.reshape(nsteps*size, 64)
+
+    next_rnn_hx = model.base._forward_gru(shared0, rnn_hx_mod, masks)[0]
+    actor0mod = model.base.actor0(next_rnn_hx)
+    actor0mod = actor0mod.reshape(nsteps, size, 64)
+        
+    delt_actor0 = (actor0mod - actor0).detach()
+    
+    if ap:
+        actor1 = model.base.actor1(actor0mod.reshape(nsteps*size, 64))
+        logits = model.dist(actor1)
+        probs = logits.probs.reshape(nsteps, size, 2)[:, :, 1].detach()
+        return delt_actor0, probs
+
+    if decision_nodes is not None:
+        return delt_actor0, delt_rnn_sizes
+        
+    return delt_actor0
 """
 
 Behavior scoring
