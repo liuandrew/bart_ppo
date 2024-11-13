@@ -127,6 +127,9 @@ def unnormalize_obs(obs, obs_rms):
     """
     return (obs * np.sqrt(obs_rms.var + 1e-8)) + obs_rms.mean
 
+def normalize_obs(obs, obs_rms):
+    return (obs - obs_rms.mean) / np.sqrt(obs_rms.var + 1e-8) 
+
 def get_sizes(res, obs_rms, last_only=False):
     """
     Additional simplification from unnormalize_obs, get sizes directly from 

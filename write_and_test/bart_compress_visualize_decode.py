@@ -6,8 +6,9 @@ import pandas as pd
 from torch import nn, optim
 import torch
 from plotting_utils import rgb_colors, get_color_from_colormap
-from bart_representation_analysis import comb_pca
+from bart_representation_analysis import comb_pca, normalize_obs
 
+from scipy.stats import ttest_ind
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
@@ -22,6 +23,7 @@ from sklearn.metrics import (
     root_mean_squared_error,
     r2_score
 )
+from captum.attr import LayerIntegratedGradients, LayerConductance, IntegratedGradients
     
 
 
@@ -56,11 +58,17 @@ def get_impulsivity_data(res, impulsive_thres=0.2, ep=None, layer='shared1',
             ep = [ep]
         v = np.vstack([res['values'][e] for e in ep])
         ap = np.vstack([res['action_probs'][e] for e in ep])[:, 1]
-        activ = np.vstack([res['activations'][layer][e] for e in ep])
+        if layer == 'rnn_hxs':
+            activ = np.vstack([res['rnn_hxs'][e] for e in ep])
+        else:
+            activ = np.vstack([res['activations'][layer][e] for e in ep])
     else:
         v = np.vstack(res['values'])
         ap = np.vstack(res['action_probs'])[:, 1]
-        activ = np.vstack(res['activations'][layer])
+        if layer == 'rnn_hxs':
+            activ = np.vstack(res['rnn_hxs'])
+        else:
+            activ = np.vstack(res['activations'][layer])
         
     imp_steps = ap < impulsive_thres
     
@@ -152,7 +160,10 @@ def get_cluster_activations(res, layer='shared1', kmeans=None, k=5, orientation=
     Use kmeans on hidden state data to cluster the data after scaling
     km: if passed, use an already fit KMeans model, rather than fitting a new one
     '''
-    activ = np.vstack(res['activations'][layer])
+    if layer == 'rnn_hxs':
+        activ = np.vstack(res['rnn_hxs'])
+    else:
+        activ = np.vstack(res['activations'][layer])
     if orientation is not None:
         activ = activ * orientation
     data = activ.T  # change to [64, T]
@@ -225,13 +236,18 @@ def find_k_cluster_activations(res, layer='shared1', require_ap_explained=True):
 
 
 
-def kmeans_oriented_activations(res, layer='shared1', require_ap_explained=True):
+def kmeans_oriented_activations(res, layer='rnn_hxs', require_ap_explained=True):
     '''
     Perform k-means but also flip activations to allow for reversed activations to cluster
     together. Automatically determine the appropriate orientations of each nodes activity
     according to which orientation has better clustering
+    
+    layer: shared0/shared1/critic0/critic1/actor0/actor1/rnn_hxs
+        rnn_hxs is slightly different than shared1 by 1 timestep, it is the input at time t
+        whereas shared1 is the output at time t
     '''
     imp = get_impulsivity_data(res, layer=layer, load_global=False)
+    
     activ = imp['activ']
     ap = imp['ap'].reshape(-1, 1)
     combactiv = np.hstack([activ, -activ])
@@ -685,6 +701,36 @@ def visualize_regressor_coefficients(coefs, by_clusters=True, ax=None,
         ax.legend(loc='ur')
     return ax
 
+
+
+def plot_cluster_grads(grads, labels):
+    cgrads = cluster_grads(grads, labels)
+    k = np.max(labels)+1
+    ymax = grads.max()
+    ymin = grads.min()
+    
+    fig, ax = pplt.subplots()
+    for i in range(k):
+        ax.boxplot(i, cgrads[i])
+        t = ttest_ind(cgrads[i], grads)
+        p = t.pvalue
+        s = t.statistic
+        star = ''
+        if p < 0.05:
+            star = '*'
+        elif p < 0.005:
+            star = '**'
+        elif p < 0.0005:
+            star = '***'
+        if s < 0:
+            star_color = 'red'
+        else:
+            star_color = 'black'
+        ax.text(i, ymax*1.03, star, ha='center', c=star_color)
+    ax.format(ylim=[ymin*0.85, ymax*1.2])
+
+    ax.format(xlabel='Cluster index', ylabel='')
+
 '''
 
 Activity decoding methods
@@ -799,3 +845,152 @@ def compute_regressor_coefficients(res, layer='shared1', by_clusters=True):
     coefs = np.vstack([act_coef, val_coef, imp_coef])
     scores = np.array([act_score, val_score, imp_score])
     return coefs, scores
+
+
+    
+def cluster_grads(grads, labels):
+    '''Given some computed gradients and cluster labels, sort the gradients
+    into their clusters'''
+    k = np.max(labels)+1
+    clustered_grads = []
+    for i in range(k):
+        clustered_grads.append(grads[labels == i].reshape(-1))
+    return clustered_grads
+
+
+def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
+                              plot=True, give=False):
+    '''
+    Use integrated gradients to see the influence of each hidden node on
+    certain output
+    
+    test: 'value'/'action'
+    labels: used for plotting cluster grads after finding influence
+    plot: whether to make plot
+    give: whether testing an agent that has giverew and needs larger obs
+    '''
+    rnn_hxs = np.vstack(res['rnn_hxs'])
+    idxs = np.arange(rnn_hxs.shape[0])
+    idxs = np.random.permutation(idxs)
+    targets = rnn_hxs[idxs[:50]]
+
+    if give:
+        base_obs = np.array([0, 1, 0, 0, 0, 0, 0.6, 0, 0]) # defines size 0 balloon with color and prev action nothing
+    else:
+        base_obs = np.array([0, 1, 0, 0, 0, 0, 0.6, 0]) # defines size 0 balloon with color and prev action nothing
+    base_obs = normalize_obs(base_obs, obs_rms)
+
+    # hxs should have shape [1, N, hidden_size]
+    # obs with batch_first=False have shape [1, N, obs_size]
+    def forward(hxs):
+        n = hxs.shape[0]
+        hxs = hxs.reshape(1, n, 64)
+        obs = np.full((1, n, len(base_obs)), base_obs)
+        obs = torch.tensor(obs, dtype=torch.float32)
+        x = model.base.shared0(obs)
+        x = model.base.gru(x, hxs)[0]
+        x = x.reshape(n, 64)
+
+        if test == 'value':
+            x = model.base.critic1(x)
+            val = model.base.critic_head(x)
+            return val
+        elif test == 'action':
+            x = model.base.actor0(x)
+            x = model.base.actor1(x)
+            dist = model.dist(x)
+            return dist.probs
+
+    if test == 'value':
+        target_idx = 0
+    elif test == 'action':
+        target_idx = 1
+
+    grads = []
+    cond = IntegratedGradients(forward)
+    for target in targets:
+        target_hxs = torch.tensor(target.reshape(1, 1, 64))
+        grad = cond.attribute(target_hxs, target=target_idx)
+        grad = grad.squeeze()
+        grads.append(grad)
+
+    grads = torch.vstack(grads).numpy()
+    grads = np.abs(grads)
+    grads = np.mean(grads, axis=0)
+
+    if plot:
+        plot_cluster_grads(grads, labels)
+
+    return grads
+
+
+
+def compute_rnn_hxs_influences(model, res, nsteps=100, unroll=3):
+    '''
+    Test how much influence each recurrent layer node on the otheres
+    Computes whether node i influenced node j in the direction it was
+        already moving, and we call this "activating" as opposed to
+        "inhibiting" if it exerts opposite influence
+        Although, this notion might be incorrect, and might be better
+        conceptualize in relation to the direction node j provides information
+        in, but overall this is easier to work with for now.
+    '''
+    n = nsteps
+
+    rnn_hxs = np.vstack(res['rnn_hxs'])
+    obs = np.vstack(res['obs'])
+    idxs = np.arange(rnn_hxs.shape[0]-5)
+    idxs = np.random.permutation(idxs)
+
+    all_influences = []
+
+    for j in range(n):
+        start = idxs[j]
+        end = start + unroll
+        # prev = rnn_hxs[start-1:end-1]
+        # next = rnn_hxs[start+1:end+1]
+        prev = rnn_hxs[start-1]
+        next = rnn_hxs[start+1]
+        cur = rnn_hxs[start]
+
+        diff = cur - prev
+        move = np.sign(next - cur)
+
+        cur = torch.tensor(cur.reshape(1, 1, 64), requires_grad=True)
+        
+        o = torch.tensor(obs[start:end], dtype=torch.float32).unsqueeze(1)
+        x = model.base.shared0(o)
+        x = model.base.gru(x, cur)[1]
+        # print(x)
+
+        influences = []
+        for i in range(64):
+            model.zero_grad()
+            x[0, 0, i].backward(retain_graph=True)
+            grad = cur.grad.squeeze()
+            cur.grad = None
+            # influences.append(grad * diff) # absolute influence
+            influences.append(grad * diff * move[i]) # relative influence, activating/inhibiting
+            
+        influences = torch.stack(influences).numpy()
+        for i in range(64):
+            influences[i, i] = 0
+        all_influences.append(influences)
+        
+    cumu_influences = np.array(all_influences).mean(axis=0)
+    return cumu_influences
+
+
+def get_cluster_influences(influences, labels):
+    k = max(labels)+1
+    
+    cluster_influence = np.zeros((k, k))
+
+    for i in range(k):
+        for j in range(k):
+            nodes_i = np.where(labels == i)[0]
+            nodes_j = np.where(labels == j)[0]
+            # Influences from nodes of cluster j to nodes of cluster i
+            ij_influence = influences[nodes_i][:, nodes_j]
+            cluster_influence[i, j] = np.mean(ij_influence)
+    return cluster_influence
