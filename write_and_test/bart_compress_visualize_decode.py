@@ -39,6 +39,30 @@ bart_plot_colors = {0: 'deep red',
 
 
 '''
+Labels for plotting convenience
+'''
+give_rew = ['', 'giverew_']
+postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
+models = [1.0, 1.2, 1.5, 1.7, 2.0]
+trials = range(3)
+chks = np.arange(10, 243, 30)
+
+give_labels = ['Rew not shown', 'Rew shown']
+pop_labels = ['0', '-0.05', '-0.1', '-0.2']
+pop_vals = [0, -0.05, -0.1, -0.2]
+p_labels = ['1.0',' 1.2', '1.5', '1.7', '2.0']
+chk_labels = [str(c) for c in chks]
+chk_axis = 'Checkpoint'
+pop_axis = 'Punishment on pop'
+p_axis = 'p'
+
+iterators = [give_rew, postfixes, models, trials, chks]
+# iterators = [postfixes, models, trials, chks]
+iterators_idxs = [range(len(i)) for i in iterators]
+sizes = [len(i) for i in iterators]
+
+
+'''
 
 Data convenience
 A lot of code is repeated to get data out of a res dictionary
@@ -154,11 +178,13 @@ into this area
 
 '''
 
-def get_cluster_activations(res, layer='shared1', kmeans=None, k=5, orientation=None,
-                            random_state=0):
+def get_cluster_activations(res, layer='shared1', labels=None, kmeans=None, k=5, orientation=None,
+                            random_state=0, ret_activ=False):
     '''
     Use kmeans on hidden state data to cluster the data after scaling
-    km: if passed, use an already fit KMeans model, rather than fitting a new one
+    labels: if passed, use predetermined kmeans labels
+    kmeans: if passed, use an already fit KMeans model, rather than fitting a new one
+    ret_activ: if True, pass back the normalized, oriented, and clustered activations
     '''
     if layer == 'rnn_hxs':
         activ = np.vstack(res['rnn_hxs'])
@@ -169,14 +195,25 @@ def get_cluster_activations(res, layer='shared1', kmeans=None, k=5, orientation=
     data = activ.T  # change to [64, T]
     scaler = TimeSeriesScalerMeanVariance()
     data_normalized = scaler.fit_transform(data[:, :, np.newaxis])  # Shape becomes [64, T, 1]
-    data_normalized = data_normalized.squeeze()  # Back to shape [64, T]
-    if kmeans is None:
-        kmeans = KMeans(n_clusters=k, random_state=0)
-    labels = kmeans.fit_predict(data_normalized)
+    data_normalized = data_normalized.squeeze()  # Back to shape [T, 64]
+    if labels is None:
+        if kmeans is None:
+            kmeans = KMeans(n_clusters=k, random_state=0)
+        else:
+            k = kmeans.n_clusters
+        labels = kmeans.fit_predict(data_normalized)
+    else:
+        k = np.max(labels) + 1
     
-    cluster_data = [data_normalized[labels == i] for i in range(kmeans.n_clusters)]
-    cluster_activations = np.vstack([c.mean(axis=0) for c in cluster_data]).T
-    return cluster_activations, labels, kmeans
+    
+    data_normalized = data_normalized.T 
+    cluster_data = [data_normalized[:, labels == i] for i in range(k)]
+    cluster_activations = np.vstack([c.mean(axis=1) for c in cluster_data]).T
+
+    if ret_activ:
+        return cluster_activations, labels, kmeans, cluster_data, data_normalized
+    else:
+        return cluster_activations, labels, kmeans
 
 
 
@@ -215,7 +252,7 @@ def find_k_cluster_activations(res, layer='shared1', require_ap_explained=True):
         silhouette_scores.append(silhouette_avg)
 
         # Test how good the cluster compression explains behavior
-        cluster_activations, _, _ = get_cluster_activations(res, layer, kmeans)
+        cluster_activations, _, _ = get_cluster_activations(res, layer, kmeans=kmeans)
         lr = LinearRegression()
         lr.fit(cluster_activations, ap)
         ypred = lr.predict(cluster_activations)
@@ -274,7 +311,7 @@ def kmeans_oriented_activations(res, layer='rnn_hxs', require_ap_explained=True)
         silhouette_scores.append(silhouette_avg)
 
         # Test how good the cluster compression explains behavior
-        cluster_activations, _, _ = get_cluster_activations(res, layer, kmeans)
+        cluster_activations, _, _ = get_cluster_activations(res, layer, kmeans=kmeans)
         lr = LinearRegression()
         lr.fit(cluster_activations, ap)
         ypred = lr.predict(cluster_activations)
@@ -384,10 +421,13 @@ or how compressed activities change with the different balloon conditions
 
 
 def visualize_cluster_activations(res, klabels, ep=8, layer='shared1', 
-                                  orientation=None, normalize=True,
-                                  step1=100, step2=200):
+                                  orientation=None,
+                                  step1=100, step2=200, ax=None,
+                                  format=True, include_components=True):
     '''
     Visualize the compositionn of each cluster across a single episode
+
+    format
     '''
     k = np.max(klabels) + 1
     if k > 20:
@@ -396,27 +436,51 @@ def visualize_cluster_activations(res, klabels, ep=8, layer='shared1',
     if orientation is None:
         orientation = np.ones(len(klabels))
 
-    if normalize:
-        activ = np.vstack(res['activations'][layer])
-        activ = (activ * orientation).T
-        scaler = TimeSeriesScalerMeanVariance()
-        activ = scaler.fit_transform(activ[:, :, np.newaxis])
-        activ = activ.squeeze().T  # Back to shape [T, 64]
-    else:
-        activ = np.vstack(res['activations'][layer]) * orientation
-    activ = split_by_ep(res, activ)[ep]
+    cluster_activations, _, _, cluster_data, _ = get_cluster_activations(res, layer, klabels, ret_activ=True,
+                                                                         orientation=orientation)
+    cluster_activ = split_by_ep(res, cluster_activations)[ep]
     
-    cluster_data = [activ[:, klabels == i] for i in range(k)]
-    fig, axs = pplt.subplots(nrows=k, sharex=True, sharey=True, 
-                             figwidth=5, refaspect=4)
+    if ax is None:
+        fig, ax = pplt.subplots(nrows=k, sharex=True, sharey=True, 
+                                figwidth=5, refaspect=4)
         
-    for i, ax in enumerate(axs):
-        ax.format(title=f'Cluster {i}')
+    for i in range(k):
         
-        for j in range(cluster_data[i].shape[1]):
-            ax.plot(cluster_data[i][step1:step2, j], alpha=0.5)
-        ax.plot(cluster_data[i].mean(axis=1)[step1:step2], c='black')
-    fig.format(suptitle='Time Series Clusters Visualization', xlabel='Time', ylabel='Normalized Value')
+        a = split_by_ep(res, cluster_data[i])[ep]
+        if include_components:
+            for j in range(cluster_data[i].shape[1]):
+                ax[i].plot(a[step1:step2, j], alpha=0.5)
+        ax[i].plot(cluster_activ[step1:step2, i], c='black')
+        if format:
+            ax[i].format(title=f'Cluster {i+1}')
+    if format:
+        ax.format(suptitle='Time Series Clusters Visualization', xlabel='Time', ylabel='Normalized Value')
+
+
+def visualize_cluster_activations_combined(res, klabels, cluster_activ, eps=[2, 12], layer='rnn_hxs',
+                                           orientation=None, include_components=True):
+    '''
+    Make a combined visualization of cluster activations for small balloon,
+    large balloon, and over all time periods
+
+    include_components: whether to also plot the component pieces
+    '''
+    k = cluster_activ.shape[1]
+    sizes = np.round(np.arange(0.2, 1.01, 0.05), 2)
+    fig, ax = pplt.subplots(nrows=k, ncols=3, figwidth=8, refaspect=3,
+                            wspace=0)
+    visualize_cluster_activations(res, klabels, ep=eps[0], layer='rnn_hxs',
+                                orientation=orientation, ax=ax[:, 0],
+                                format=False, include_components=include_components)
+    visualize_cluster_activations(res, klabels, ep=eps[1], layer='rnn_hxs',
+                                orientation=orientation, ax=ax[:, 1],
+                                format=False, include_components=include_components)
+    for i in range(k):
+        ax[i, 2].plot(cluster_activ[:, i], c='gray7')
+
+    ax.format(leftlabels=[f'Cluster {i+1}' for i in range(k)],
+            toplabels=[f'$\mu={sizes[eps[0]]}$', f'$\mu={sizes[eps[1]]}$', 
+                       'All eps'])
 
 
 def get_size_episode_coverage(res):
@@ -703,33 +767,151 @@ def visualize_regressor_coefficients(coefs, by_clusters=True, ax=None,
 
 
 
-def plot_cluster_grads(grads, labels):
+def plot_cluster_grads(grads, labels, ax=None, bar=False):
     cgrads = cluster_grads(grads, labels)
     k = np.max(labels)+1
     ymax = grads.max()
     ymin = grads.min()
     
-    fig, ax = pplt.subplots()
+    if ax is None:
+        fig, ax = pplt.subplots()
     for i in range(k):
-        ax.boxplot(i, cgrads[i])
-        t = ttest_ind(cgrads[i], grads)
-        p = t.pvalue
-        s = t.statistic
-        star = ''
-        if p < 0.05:
-            star = '*'
-        elif p < 0.005:
-            star = '**'
-        elif p < 0.0005:
-            star = '***'
-        if s < 0:
-            star_color = 'red'
+        if bar:
+            ax.bar(i, np.mean(cgrads[i]), c=rgb_colors[0])
         else:
-            star_color = 'black'
-        ax.text(i, ymax*1.03, star, ha='center', c=star_color)
-    ax.format(ylim=[ymin*0.85, ymax*1.2])
+            ax.boxplot(i, cgrads[i])
+            t = ttest_ind(cgrads[i], grads)
+            p = t.pvalue
+            s = t.statistic
+            star = ''
+            if p < 0.05:
+                star = '*'
+            elif p < 0.005:
+                star = '**'
+            elif p < 0.0005:
+                star = '***'
+            if s < 0:
+                star_color = 'red'
+            else:
+                star_color = 'black'
+            ax.text(i, ymax*1.03, star, ha='center', c=star_color)
+    if not bar:
+        ax.format(ylim=[ymin*0.85, ymax*1.2])
 
-    ax.format(xlabel='Cluster index', ylabel='')
+    ax.format(xlabel='Cluster number', ylabel='',
+              xlocator=range(k), xformatter=[str(i+1) for i in range(k)])
+
+
+
+def visualize_cluster_connectivity(model, obs_rms, res, cluster_activ, labels, 
+                                   give=False, ep=8):
+    '''
+    Create cluster connectivity plot
+    '''
+    k = np.max(labels) + 1
+    # Measure cluster influences on each other
+    cumu_influences = compute_rnn_hxs_influences(model, res, max_unroll=4, nsteps=300)
+    cluster_influence = get_cluster_influences(cumu_influences, labels)
+    # Measure cluster influences on val and pol
+    val_scores, pol_scores = get_val_and_action_scores(model, obs_rms, res, labels,
+                                                       give=give, plot=False)
+    
+    cluster_activ_ep = split_by_ep(res, cluster_activ)
+    step1 = 100
+    step2 = 130
+    t = np.arange(step1, step2)
+    a = cluster_activ_ep[ep]
+    ts_list = [a[step1:step2, i] for i in range(k)]
+    bsteps = np.array([s for s in res['data']['balloon_step'][ep] if s in range(100, 130)])
+    bstep_r = np.array(res['rewards'][ep][bsteps] > 0)
+
+    ymins = cluster_activ.min(axis=0)
+    ymaxs = cluster_activ.max(axis=0)
+    W = cluster_influence
+
+    theta = np.linspace(0, 2 * np.pi, k, endpoint=False)
+    R = 1
+    x = R * np.cos(theta)
+    y = R * np.sin(theta)
+
+    fig = pplt.figure(figwidth=6)
+    ax = fig.add_subplot(111)
+    ax.set_xlim(-1.5 * R, 1.5 * R)
+    ax.set_ylim(-1.5 * R, 1.5 * R)
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    trans = ax.transData.transform
+    inv = fig.transFigure.inverted().transform
+    w = 0.1
+    for i in range(k):
+        x_fig = (R + 2.5*w) * np.cos(theta[i])
+        y_fig = (R + 2.5*w) * np.sin(theta[i])
+        x_fig2, y_fig2 = inv(trans((x_fig, y_fig)))
+        ax_inset = fig.add_axes([x_fig2 - w*0.9, y_fig2 - w*0.6, w, w])
+        ax_inset.plot(t, ts_list[i], color='black', zorder=1)
+        ax_inset.scatter(bsteps[bstep_r], a[bsteps[bstep_r], i], c=rgb_colors[2], s=15, zorder=2)
+        ax_inset.scatter(bsteps[~bstep_r], a[bsteps[~bstep_r], i], c=rgb_colors[3], s=15, zorder=2)
+        ax_inset.set_xticks([])
+        ax_inset.set_yticks([])
+        ax_inset.set_ylim([ymins[i], ymaxs[i]])
+        # ax_inset.axis('off')
+        cstr = f'C{i+1} '
+        if val_scores[i] is not None:
+            cstr += f'V:{val_scores[i]:.2f} '
+        if pol_scores[i] is not None:
+            cstr += f'$\pi$:{pol_scores[i]:.2f} '
+        
+        ax.text(0, 1.1, cstr, transform=ax_inset.transAxes)
+        
+        
+    # circle = plt.Circle((0, 0), radius=R, 
+    #                     fill=False, edgecolor='black', linewidth=2)
+    # ax.add_patch(circle)
+
+    min_weight = np.min(W)
+    max_weight = np.max(np.abs(W))
+
+    for i in range(k):
+        for j in range(k):
+            if i != j and W[i, j] != 0:
+                x_start, y_start = x[j], y[j]
+                x_end, y_end = x[i], y[i]
+                
+                if i > j:
+                    offset = -0.05
+                    dir_x = x_end - x_start
+                    dir_y = y_end - y_start
+
+                    # Calculate perpendicular unit vector
+                    length = np.sqrt(dir_x**2 + dir_y**2)
+                    unit_perp_x = -dir_y / length
+                    unit_perp_y = dir_x / length
+
+                    # Offset the line in the perpendicular direction
+                    x_start = x_start + offset * unit_perp_x
+                    y_start = y_start + offset * unit_perp_y
+                    x_end = x_end + offset * unit_perp_x
+                    y_end = y_end + offset * unit_perp_y
+
+                
+                weight = W[i, j]
+                color = 'red' if weight > 0 else 'blue'
+                alpha = (np.abs(weight) / max_weight)**1.7
+
+                ax.annotate(
+                    '',
+                    xy=(x_end, y_end),
+                    xytext=(x_start, y_start),
+                    arrowprops=dict(
+                        arrowstyle='->',
+                        color=color,
+                        alpha=alpha,
+                        linewidth=2,
+                        shrinkA=20,
+                        shrinkB=20,
+                    )
+                )
 
 '''
 
@@ -859,7 +1041,7 @@ def cluster_grads(grads, labels):
 
 
 def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
-                              plot=True, give=False):
+                              plot=True, give=False, ax=None, bar=True):
     '''
     Use integrated gradients to see the influence of each hidden node on
     certain output
@@ -868,6 +1050,7 @@ def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
     labels: used for plotting cluster grads after finding influence
     plot: whether to make plot
     give: whether testing an agent that has giverew and needs larger obs
+    bar_plot: use bar plots instead of boxplots
     '''
     rnn_hxs = np.vstack(res['rnn_hxs'])
     idxs = np.arange(rnn_hxs.shape[0])
@@ -919,13 +1102,13 @@ def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
     grads = np.mean(grads, axis=0)
 
     if plot:
-        plot_cluster_grads(grads, labels)
+        plot_cluster_grads(grads, labels, ax=ax, bar=bar)
 
     return grads
 
 
 
-def compute_rnn_hxs_influences(model, res, nsteps=100, unroll=3):
+def compute_rnn_hxs_influences(model, res, nsteps=100, max_unroll=3):
     '''
     Test how much influence each recurrent layer node on the otheres
     Computes whether node i influenced node j in the direction it was
@@ -939,12 +1122,13 @@ def compute_rnn_hxs_influences(model, res, nsteps=100, unroll=3):
 
     rnn_hxs = np.vstack(res['rnn_hxs'])
     obs = np.vstack(res['obs'])
-    idxs = np.arange(rnn_hxs.shape[0]-5)
+    idxs = np.arange(5, rnn_hxs.shape[0]-5)
     idxs = np.random.permutation(idxs)
 
     all_influences = []
 
     for j in range(n):
+        unroll = np.random.randint(1, max_unroll+1)
         start = idxs[j]
         end = start + unroll
         # prev = rnn_hxs[start-1:end-1]
@@ -954,7 +1138,9 @@ def compute_rnn_hxs_influences(model, res, nsteps=100, unroll=3):
         cur = rnn_hxs[start]
 
         diff = cur - prev
-        move = np.sign(next - cur)
+        mag = cur.reshape(-1)
+        # move = np.sign(next - cur)
+        move = np.sign(rnn_hxs[start+unroll-1] - rnn_hxs[start+unroll])
 
         cur = torch.tensor(cur.reshape(1, 1, 64), requires_grad=True)
         
@@ -970,9 +1156,11 @@ def compute_rnn_hxs_influences(model, res, nsteps=100, unroll=3):
             grad = cur.grad.squeeze()
             cur.grad = None
             # influences.append(grad * diff) # absolute influence
-            influences.append(grad * diff * move[i]) # relative influence, activating/inhibiting
+            # influences.append(grad * diff * move[i]) # relative influence, activating/inhibiting
+            # influences.append(grad * move[i]) # relative influence, activating/inhibiting
+            influences.append(grad * mag * move[i]) # relative influence, activating/inhibiting
             
-        influences = torch.stack(influences).numpy()
+        influences = torch.stack(influences).detach().numpy()
         for i in range(64):
             influences[i, i] = 0
         all_influences.append(influences)
@@ -981,7 +1169,14 @@ def compute_rnn_hxs_influences(model, res, nsteps=100, unroll=3):
     return cumu_influences
 
 
+
+
 def get_cluster_influences(influences, labels):
+    '''
+    Organize rnn_hx_influences from compute_rnn_hxs_influences into cluster-wise interactions
+    Array will have indices (i, j) meaning the average influence of node in cluster
+        j to nodes of cluster i
+    '''
     k = max(labels)+1
     
     cluster_influence = np.zeros((k, k))
@@ -994,3 +1189,41 @@ def get_cluster_influences(influences, labels):
             ij_influence = influences[nodes_i][:, nodes_j]
             cluster_influence[i, j] = np.mean(ij_influence)
     return cluster_influence
+
+    
+def get_val_and_action_scores(model, obs_rms, res, labels, give=False,
+                              plot=False):
+    '''
+    For given cluster labels, compute
+    '''
+    if plot:
+        fig, axs = pplt.subplots(ncols=2, sharey=False)
+        axs.format(ylabel='Gradient contributed')
+        axs[0].format(title='Value output contribution')
+        axs[1].format(title='Policy output contribution')
+    
+    ax = axs[0] if plot else None
+    k = np.max(labels) + 1
+    grads = test_integrated_gradients(model, obs_rms, res, labels, test='value',
+                                    give=give, bar=True, plot=plot, ax=ax)
+    val_scores = []
+    clustered_grads = cluster_grads(grads, labels)
+    for i in range(k):
+        t = ttest_ind(clustered_grads[i], grads)
+        if t.statistic > 0:
+            val_scores.append(1 - t.pvalue)
+        else:
+            val_scores.append(None)
+    ax = axs[1] if plot else None
+    grads = test_integrated_gradients(model, obs_rms, res, labels, test='action',
+                                    give=give, bar=True, plot=plot, ax=ax)
+    pol_scores = []
+    clustered_grads = cluster_grads(grads, labels)
+    for i in range(k):
+        t = ttest_ind(clustered_grads[i], grads)
+        if t.statistic > 0:
+            pol_scores.append(1 - t.pvalue)
+        else:
+            pol_scores.append(None)
+
+    return val_scores, pol_scores

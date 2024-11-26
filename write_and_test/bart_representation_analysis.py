@@ -274,10 +274,13 @@ def select_chks_by_dimension(h=None, i=None, j=None, by='first'):
     
     
     
-def select_random_model(size=1, by='first', seed=None, load_models=False):
+def select_random_model(size=1, idx=None, by='first', seed=None, load_models=False):
     '''
     Randomly select a tested model, picking a specific checkpoint
     corresponding to by: 'first'/'best'/'close'
+    
+    Function is pretty generally useful, so add an option
+    idx: 4-tuple of (h,i,j,k), checkpoint will select automatically
     '''
     if by == 'best':
         idxs = pickle.load(open('data/meta_representation_best_idxs', 'rb'))
@@ -285,10 +288,13 @@ def select_random_model(size=1, by='first', seed=None, load_models=False):
         idxs = pickle.load(open('data/meta_representation_first_idxs', 'rb'))
     elif by == 'close': 
         idxs = pickle.load(open('data/meta_representation_close_idxs', 'rb'))
-    total_size = np.prod(idxs.shape)
-    models = np.random.choice(np.arange(total_size), size=size, replace=False)
-    models = [np.unravel_index(model, idxs.shape) for model in models]
-    model_idxs = [model + (idxs[model],) for model in models]
+    if idx is None:
+        total_size = np.prod(idxs.shape)
+        models = np.random.choice(np.arange(total_size), size=size, replace=False)
+        models = [np.unravel_index(model, idxs.shape) for model in models]
+        model_idxs = [model + (idxs[model],) for model in models]
+    else:
+        model_idxs = [idx + (idxs[idx],)]
 
     if load_models:
         models = []
@@ -507,11 +513,13 @@ def score_decision_flow(res, model, large_kick=False):
     
 
 def measure_rnn_influence_multi(res, model, ep, steps, decision_nodes=None, ap=False,
-                          large_kick=False):
+                          large_kick=False, critic_change=False):
     '''Measure how much influence individual nodes or group of nodes have on a certain step
     
     decision_nodes: pass boolean array of size 64 to differentiate decision and non-decision nodes
     ap: if True, compute the influence on action probabilities
+
+    critic_change: measure change to critic layer as well
     '''
     nsteps = len(steps)
 
@@ -524,6 +532,7 @@ def measure_rnn_influence_multi(res, model, ep, steps, decision_nodes=None, ap=F
     rnn_hx_mod = torch.zeros((nsteps, size, 64))
     shared0 = torch.zeros((nsteps, size, 64))
     actor0 = torch.zeros((nsteps, size, 64))
+    critic0 = torch.zeros((nsteps, size, 64))
     masks = np.array([1.], dtype='float32')
     for i, step in enumerate(steps):
         rnn_hx = torch.tensor(res['rnn_hxs'][ep][step])
@@ -535,6 +544,7 @@ def measure_rnn_influence_multi(res, model, ep, steps, decision_nodes=None, ap=F
             rnn_hx_mod[i, j] = rnn_hx
             shared0[i, j] = res['activations']['shared0'][ep][step]
             actor0[i, j] = res['activations']['actor0'][ep][step]
+            critic0[i, j] = res['activations']['critic0'][ep][step]
         if decision_nodes is not None:
             rnn_hx_mod[i, 0, decision_nodes] += delt_rnn[decision_nodes]
             rnn_hx_mod[i, 1, ~decision_nodes] += delt_rnn[~decision_nodes]
@@ -550,14 +560,19 @@ def measure_rnn_influence_multi(res, model, ep, steps, decision_nodes=None, ap=F
     next_rnn_hx = model.base._forward_gru(shared0, rnn_hx_mod, masks)[0]
     actor0mod = model.base.actor0(next_rnn_hx)
     actor0mod = actor0mod.reshape(nsteps, size, 64)
-        
     delt_actor0 = (actor0mod - actor0).detach()
+    critic0mod = model.base.critic0(next_rnn_hx)
+    critic0mod = critic0mod.reshape(nsteps, size, 64)
+    delt_critic0 = (critic0mod - critic0).detach()
     
     if ap:
         actor1 = model.base.actor1(actor0mod.reshape(nsteps*size, 64))
         logits = model.dist(actor1)
         probs = logits.probs.reshape(nsteps, size, 2)[:, :, 1].detach()
         return delt_actor0, probs
+    
+    if critic_change:
+        return delt_actor0, delt_critic0
 
     if decision_nodes is not None:
         return delt_actor0, delt_rnn_sizes

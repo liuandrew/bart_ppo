@@ -406,22 +406,13 @@ def forced_action_evaluate_multi(actor_critic, obs_rms=None, normalize=True, for
                                         with_activations=with_activations)
                 if forced_actions is None:
                     action = outputs['action']
-                elif type(forced_actions) in [int, float]:
-                    action = torch.full((num_processes, 1), forced_actions)
-                elif type(forced_actions) in [list, np.ndarray]:
-                    # Can give partial episodes - after actions run out will use outputs
-                    if step >= len(forced_actions):
-                        action = outputs['action']
-                    else:
-                        action = torch.full((num_processes, 1), forced_actions[step])
-                    
-                elif type(forced_actions) == type(lambda:0):
-                    actions = [torch.tensor(forced_actions(step)) for i in range(num_processes)]
-                    action = torch.vstack(actions) 
-                elif type(forced_actions) == dict:
-                    # special case: assume a dict where each episode's actions are laid out
-                    action = torch.full((num_processes, 1), forced_actions[ep][step])
-                                                
+                else:
+                    action = torch.zeros((num_processes, 1), dtype=torch.int64)
+                    for proc_num in range(num_processes):
+                        if len(forced_actions[proc_num]) > step:
+                            action[proc_num] = forced_actions[proc_num][step]
+                        else:
+                            action[proc_num] = 1
                 rnn_hxs = outputs['rnn_hxs']
                 obs, reward, done, infos = envs.step(action)
                 obs = torch.tensor(obs)
