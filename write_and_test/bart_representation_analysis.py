@@ -75,19 +75,18 @@ def evalu(model, obs_rms, give_rew=False):
 def metabart_model_load(idx=None, h=None, i=None, j=None, k=None, l=None):
     if idx is not None:
         h, i, j, k, l = idx
-    give_rew = ['', 'giverew_']
+    give_rew = ['', 'giverew_', 'fixprev_']
     postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
     models = [1.0, 1.2, 1.5, 1.7, 2.0]
     trials = range(3)
     chks = np.arange(10, 243, 30)
-
     give = give_rew[h]
     postfix = postfixes[i]
     model = models[j]
     t = k
     chk = chks[l]
     
-    if h == 1 and postfix == '':
+    if h in [1, 2] and postfix == '':
         postfix = 'pop0'
     exp_name = f"{give}p{model}n50{postfix}"
     model, (obs_rms, ret_rms) = \
@@ -244,7 +243,12 @@ def select_chks(arr, by='first'):
     elif by == 'close': 
         idxs = pickle.load(open('data/meta_representation_close_idxs', 'rb'))
 
-    new_idxs = [i + (idxs[i],) for i in arr]
+    if type(arr) == list:
+        new_idxs = [i + (idxs[i],) for i in arr]
+    elif type(arr) == tuple:
+        new_idxs = arr + (idxs[arr],)
+    else:
+        raise Exception('Arg should be list (for multiple idxs) or tuple (for one idx)')
     return new_idxs
 
 def select_chks_by_dimension(h=None, i=None, j=None, by='first'):
@@ -281,6 +285,10 @@ def select_random_model(size=1, idx=None, by='first', seed=None, load_models=Fal
     
     Function is pretty generally useful, so add an option
     idx: 4-tuple of (h,i,j,k), checkpoint will select automatically
+
+    load_models:
+        True: return model_idxs, models, obs_rmss, rs
+        False: return model_idxs
     '''
     if by == 'best':
         idxs = pickle.load(open('data/meta_representation_best_idxs', 'rb'))
@@ -317,31 +325,6 @@ def select_random_model(size=1, idx=None, by='first', seed=None, load_models=Fal
         return model_idxs[0]
     return model_idxs
 
-
-
-def metabart_model_load(idx=None, h=None, i=None, j=None, k=None, l=None):
-    '''Load a model either by index (following data collection methods) or
-    by explicitly passing h,i,j,k,l in the same way expected by the index'''
-    if idx is not None:
-        h, i, j, k, l = idx
-    give_rew = ['', 'giverew_']
-    postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
-    models = [1.0, 1.2, 1.5, 1.7, 2.0]
-    trials = range(3)
-    chks = np.arange(10, 243, 30)
-
-    give = give_rew[h]
-    postfix = postfixes[i]
-    model = models[j]
-    t = k
-    chk = chks[l]
-    
-    if h == 1 and postfix == '':
-        postfix = 'pop0'
-    exp_name = f"{give}p{model}n50{postfix}"
-    model, (obs_rms, ret_rms) = \
-        torch.load(f'../saved_checkpoints/meta_v2/{exp_name}_{t}/{chk}.pt')
-    return model, obs_rms
 
 """
 

@@ -11,7 +11,8 @@ class BartMetaEnv(gym.Env):
                  give_last_action=True, give_size=True, give_rew=False,
                  inflate_speed=0.05, inflate_noise=0.02, rew_on_pop=None,
                  pop_noise=0.05, max_steps=2000, meta_setup=0, rew_structure=0,
-                 fix_sizes=None, fix_sizes_per_balloon=False, num_balloons=None, rew_p=1):
+                 fix_sizes=None, fix_sizes_per_balloon=False, num_balloons=None, rew_p=1,
+                 fix_prev_action_bug=False):
         """
         Action space: 3 actions
             toggle_task: if True, action 1 inflates, action 0 lets go
@@ -45,6 +46,10 @@ class BartMetaEnv(gym.Env):
             fix_sizes_per_balloon:
                 if True, expect that the fix_sizes will be list of lists and
                 define the balloon size per balloon, rather than per episode
+
+            fix_prev_action_bug:
+                There was a bug that made inner_reset reset the prev_action making
+                it useless to decode whether a reward was received
             
             num_balloons:
                 If set, fix the number of balloons. Note that max_steps will still be
@@ -86,6 +91,7 @@ class BartMetaEnv(gym.Env):
         self.rew_structure = rew_structure
         self.fix_sizes = fix_sizes
         self.fix_sizes_per_balloon = fix_sizes_per_balloon
+        self.fix_prev_action_bug = fix_prev_action_bug
         self.num_balloons = num_balloons
         if self.num_balloons is None:
             self.num_balloons = 1e8
@@ -173,7 +179,8 @@ class BartMetaEnv(gym.Env):
                 self.balloon_mean_sizes[i] = size[self.balloon_count]
 
         self.current_size = 0.0
-        self.prev_action = 0
+        if not self.fix_prev_action_bug:
+            self.prev_action = 0
         self.inflate_delay = 0
         self.balloon_count += 1
         

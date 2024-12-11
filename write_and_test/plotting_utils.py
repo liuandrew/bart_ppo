@@ -1,6 +1,7 @@
 import proplot as pplt
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 from matplotlib.widgets import LassoSelector
 from matplotlib.path import Path
@@ -129,6 +130,23 @@ def get_color_from_colormap(value, a, b, cmap_name='viridis', to_hex=True):
         return rgb_color
 
 
+def create_color_map(vmin, vmax, cmap_name='viridis'):
+    """
+    Creates a ScalarMappable object to use with ax.colorbar() for a defined range.
+    
+    Parameters:
+    - vmin (float): Minimum value for the color map.
+    - vmax (float): Maximum value for the color map.
+    - cmap_name (str): Name of the matplotlib colormap to use. Default is 'viridis'.
+    
+    Returns:
+    - mappable (ScalarMappable): An object to use with ax.colorbar(mappable).
+    """
+    cmap = plt.get_cmap(cmap_name)
+    norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+    mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    
+    return mappable
 from scipy.stats import ttest_ind
 
 def barplot_annotate_brackets(num1, num2, data, center, height, 

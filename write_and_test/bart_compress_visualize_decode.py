@@ -47,7 +47,7 @@ models = [1.0, 1.2, 1.5, 1.7, 2.0]
 trials = range(3)
 chks = np.arange(10, 243, 30)
 
-give_labels = ['Rew not shown', 'Rew shown']
+give_labels = ['Rew not shown', 'Rew shown', 'Prev Action Shown']
 pop_labels = ['0', '-0.05', '-0.1', '-0.2']
 pop_vals = [0, -0.05, -0.1, -0.2]
 p_labels = ['1.0',' 1.2', '1.5', '1.7', '2.0']
@@ -163,6 +163,22 @@ def split_by_ep(res, data):
         ep_data.append(data[cur_step:cur_step+ep_len])
         cur_step += ep_len
     return ep_data
+
+
+    
+def print_model(idx):
+    '''Print out the model type of the given index
+    idx: 4-tuple (h, i, j, k)'''
+    mstr = ''
+    if idx[0] == 0:
+        mstr += 'No Rew Info, '
+    else:
+        mstr += 'Rew Given, '
+        
+    mstr += f'Pop: {pop_labels[idx[1]]}, '
+    mstr += f'p: {p_labels[idx[2]]}, '
+    mstr += f'Trial {idx[3] + 1}'
+    print(mstr)
     
 '''
 
@@ -984,7 +1000,7 @@ def compute_regressor_coefficients(res, layer='shared1', by_clusters=True):
         cluster_activ = np.vstack(comb_pca(res, n_components=6, layer=layer))
         scaler = TimeSeriesScalerMeanVariance()
         cluster_norm = scaler.fit_transform(cluster_activ[:, :, np.newaxis])
-        cluster_norm = cluster_norm.reshape(cluster_activ.hape)
+        cluster_norm = cluster_norm.reshape(cluster_activ.shape)
         
     # Set up data
     actions = np.vstack(res['actions'])

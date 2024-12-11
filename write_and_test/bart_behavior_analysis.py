@@ -5,6 +5,8 @@ import itertools
 import numpy as np
 import pandas as pd
 from plotting_utils import rgb_colors
+# Might want to move this to a separate utils file
+from bart_representation_analysis import linear_best_fit
 
 pplt.rc.update({'font.size': 10})
 
@@ -539,3 +541,56 @@ def get_pop_rates(res, colors_used=3):
     
     return all_means
 
+'''
+Behavior analysis and classification
+'''
+def pop_behavior(pop_rates, ret_plot=True):
+    '''
+    Get the popping behavior of the agent
+    * Determine if there is a peak in the popping
+    * Remove the peak if it exists
+    * Find the pop rate slope from start to around when the agent reaches
+      no pop rate
+      
+    Slope and peak determine behavior
+    
+    ret_plot: return more info
+        False: return slope, local_peak
+        True: return x, y, local_peak
+    '''
+    mus = np.arange(0.2, 1.01, 0.05)
+    p = pop_rates
+    local_peak = False
+    for i in range(3, 13):
+        p1, p2, p3, p4, p5 = p[i-2], p[i-1], p[i], p[i+1], p[i+2]
+        # if (p3 > 1.05 * p2) and (p3 > 1.05 * p4) and \
+        if ((p3 > 0.1+p2) and (p3 > 0.02+p4) and (p4 > 0.02+p5)) or \
+            ((p3 > 0.02+p2) and (p3 > 0.1+p4) and (p2 > 0.02+p1)) or \
+            ((p3 > 0.02+p2) and (p3 > 0.02+p4) and (p4 > 0.02+p5) and (p2 > 0.02+p1)):
+            local_peak = True
+            
+        if ((p3 > 0.02+p2) and (p3 > 0.02+p4) and (p4 > 0.02+p5) and (p2 > 0.02+p1)):
+            removed_peak = np.concatenate([p[:i-2], p[i+2:]])
+            removed_mus = np.concatenate([mus[:i-2], mus[i+2:]])
+        elif ((p3 > 0.1+p2) and (p3 > 0.02+p4) and (p4 > 0.02+p5)):
+            removed_peak = np.concatenate([p[:i-1], p[i+2:]])
+            removed_mus = np.concatenate([mus[:i-1], mus[i+2:]])
+        elif ((p3 > 0.02+p2) and (p3 > 0.1+p4) and (p2 > 0.02+p1)):
+            removed_peak = np.concatenate([p[:i-2], p[i+1:]])
+            removed_mus = np.concatenate([mus[:i-2], mus[i+1:]])
+        else:
+            removed_peak = p
+            removed_mus = mus
+
+        if local_peak:
+            break
+
+    first_nonpop = np.argmax(removed_peak[3:] < 0.03) + 4
+    removed_peak = removed_peak[:first_nonpop]
+    removed_mus = removed_mus[:first_nonpop]
+    (m, b), r2 = linear_best_fit(removed_mus, removed_peak)
+    
+    if ret_plot:
+        return removed_mus, removed_mus*m+b, local_peak
+    else:
+        return m, local_peak
