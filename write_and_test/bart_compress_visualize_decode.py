@@ -819,27 +819,71 @@ def plot_cluster_grads(grads, labels, ax=None, bar=False):
 
 
 
-def visualize_cluster_connectivity(model, obs_rms, res, cluster_activ, labels, 
-                                   give=False, ep=8):
+def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_activ=None, labels=None,
+                                   val_grads=None, act_grads=None, influences=None, cluster_influence=None,
+                                   give=False, ep=8, step1=100, step2=130):
     '''
-    Create cluster connectivity plot
+    Create cluster connectivity plot based on an individual evaluation result set
+    Ex. (Default mode, collect data and run)
+    idx, model, obs_rms, r = select_random_model(load_models=True)
+    k, cluster_activ, labels, kmeans, orientation = kmeans_oriented_activations(r)
+    visualize_cluster_connectivity(model, obs_rms, r, cluster_activ, labels)
+    
+    Ex. (Existing data mode, influences provided)
+    val_grads = ares['val_grads'][idx]
+    act_grads = ares['action_grads'][idx]
+    influences = ares['rnn_hx_influences'][idx]
+    labels = ares['cluster_labels'][idx]
+    cluster_activ = ares['cluster_activations'][idx]
+    visualize_cluster_connectivity(cluster_activ=cluster_activ, labels=labels,
+                                val_grads=val_grads, act_grads=act_grads,
+                                influences=influences)
+    
+    Ex. (Existing data mode, cluster activ and influencces provided)
+    act_grads = forced_ares['all_action_grads']
+    val_grads = forced_ares['all_value_grads']
+    cinfluences = forced_ares['meta_cluster_influences']
+    labels = forced_ares['labels']
+    cactiv = forced_ares['kmeans'].cluster_centers_.T
+    visualize_cluster_connectivity(val_grads=val_grads, act_grads=act_grads,
+                                labels=labels, cluster_influence=cinfluences,
+                                cluster_activ=cactiv, step1=700, step2=740) 
     '''
     k = np.max(labels) + 1
-    # Measure cluster influences on each other
-    cumu_influences = compute_rnn_hxs_influences(model, res, max_unroll=4, nsteps=300)
-    cluster_influence = get_cluster_influences(cumu_influences, labels)
-    # Measure cluster influences on val and pol
-    val_scores, pol_scores = get_val_and_action_scores(model, obs_rms, res, labels,
-                                                       give=give, plot=False)
-    
-    cluster_activ_ep = split_by_ep(res, cluster_activ)
-    step1 = 100
-    step2 = 130
+    if model is not None and obs_rms is not None:
+        # Default mode: require
+        #  model, obs_rms, res, cluster_activ, labels
+        # Measure cluster influences on each other
+        cumu_influences = compute_rnn_hxs_influences(model, res, max_unroll=4, nsteps=300)
+        cluster_influence = get_cluster_influences(cumu_influences, labels)
+        # Measure cluster influences on val and pol
+        val_scores, pol_scores = get_val_and_action_scores(model, obs_rms, res, labels,
+                                                        give=give, plot=False)
+        a = split_by_ep(res, cluster_activ)[ep]
+    elif val_grads is not None and act_grads is not None and \
+         cluster_influence is None:
+        # Existing data mode: require
+        #  labels, val_grads, act_grads, influences, cluster_activ
+        cluster_influence = get_cluster_influences(influences, labels)
+        a = cluster_activ
+        val_scores, pol_scores = get_val_and_action_scores(labels=labels,
+                                                           val_grads=val_grads,
+                                                           act_grads=act_grads)
+    elif val_grads is not None and act_grads is not None and \
+         cluster_influence is not None:
+        # Existing data mode: require
+        #  labels, val_grads, act_grads, cluster_influence, cluster_activ
+        a = cluster_activ
+        val_scores, pol_scores = get_val_and_action_scores(labels=labels,
+                                                           val_grads=val_grads,
+                                                           act_grads=act_grads)
+        
     t = np.arange(step1, step2)
-    a = cluster_activ_ep[ep]
     ts_list = [a[step1:step2, i] for i in range(k)]
-    bsteps = np.array([s for s in res['data']['balloon_step'][ep] if s in range(100, 130)])
-    bstep_r = np.array(res['rewards'][ep][bsteps] > 0)
+    
+    if res is not None:
+        bsteps = np.array([s for s in res['data']['balloon_step'][ep] if s in range(100, 130)])
+        bstep_r = np.array(res['rewards'][ep][bsteps] > 0)
 
     ymins = cluster_activ.min(axis=0)
     ymaxs = cluster_activ.max(axis=0)
@@ -866,8 +910,10 @@ def visualize_cluster_connectivity(model, obs_rms, res, cluster_activ, labels,
         x_fig2, y_fig2 = inv(trans((x_fig, y_fig)))
         ax_inset = fig.add_axes([x_fig2 - w*0.9, y_fig2 - w*0.6, w, w])
         ax_inset.plot(t, ts_list[i], color='black', zorder=1)
-        ax_inset.scatter(bsteps[bstep_r], a[bsteps[bstep_r], i], c=rgb_colors[2], s=15, zorder=2)
-        ax_inset.scatter(bsteps[~bstep_r], a[bsteps[~bstep_r], i], c=rgb_colors[3], s=15, zorder=2)
+        
+        if res is not None:
+            ax_inset.scatter(bsteps[bstep_r], a[bsteps[bstep_r], i], c=rgb_colors[2], s=15, zorder=2)
+            ax_inset.scatter(bsteps[~bstep_r], a[bsteps[~bstep_r], i], c=rgb_colors[3], s=15, zorder=2)
         ax_inset.set_xticks([])
         ax_inset.set_yticks([])
         ax_inset.set_ylim([ymins[i], ymaxs[i]])
@@ -1207,10 +1253,17 @@ def get_cluster_influences(influences, labels):
     return cluster_influence
 
     
-def get_val_and_action_scores(model, obs_rms, res, labels, give=False,
+def get_val_and_action_scores(model=None, obs_rms=None, res=None, labels=None, 
+                              val_grads=None, act_grads=None,
+                              give=False,
                               plot=False):
     '''
-    For given cluster labels, compute
+    For given cluster labels, compute val and action scores based on t-test
+    of a cluster's nodes influence on value (action) relative to all nodes influence
+    on value (action)
+    
+    Can calculate by actually getting the gradient here, or just passing
+    val grad and act grads that are precomputed
     '''
     if plot:
         fig, axs = pplt.subplots(ncols=2, sharey=False)
@@ -1220,23 +1273,25 @@ def get_val_and_action_scores(model, obs_rms, res, labels, give=False,
     
     ax = axs[0] if plot else None
     k = np.max(labels) + 1
-    grads = test_integrated_gradients(model, obs_rms, res, labels, test='value',
-                                    give=give, bar=True, plot=plot, ax=ax)
     val_scores = []
-    clustered_grads = cluster_grads(grads, labels)
+    if val_grads is None:
+        val_grads = test_integrated_gradients(model, obs_rms, res, labels, test='value',
+                                        give=give, bar=True, plot=plot, ax=ax)
+    c_val_grads = cluster_grads(val_grads, labels)
     for i in range(k):
-        t = ttest_ind(clustered_grads[i], grads)
+        t = ttest_ind(c_val_grads[i], val_grads)
         if t.statistic > 0:
             val_scores.append(1 - t.pvalue)
         else:
             val_scores.append(None)
     ax = axs[1] if plot else None
-    grads = test_integrated_gradients(model, obs_rms, res, labels, test='action',
-                                    give=give, bar=True, plot=plot, ax=ax)
     pol_scores = []
-    clustered_grads = cluster_grads(grads, labels)
+    if act_grads is None:
+        act_grads = test_integrated_gradients(model, obs_rms, res, labels, test='action',
+                                        give=give, bar=True, plot=plot, ax=ax)
+    c_act_grads = cluster_grads(act_grads, labels)
     for i in range(k):
-        t = ttest_ind(clustered_grads[i], grads)
+        t = ttest_ind(c_act_grads[i], act_grads)
         if t.statistic > 0:
             pol_scores.append(1 - t.pvalue)
         else:
