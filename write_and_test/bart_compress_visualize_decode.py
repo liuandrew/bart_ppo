@@ -41,15 +41,16 @@ bart_plot_colors = {0: 'deep red',
 '''
 Labels for plotting convenience
 '''
-give_rew = ['', 'giverew_']
-postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
+give_rew = ['giverew_', 'fixprev_']
+postfixes = ['pop0', 'pop0.1', 'pop0.2', 'pop0.4']
 models = [1.0, 1.2, 1.5, 1.7, 2.0]
 trials = range(3)
 chks = np.arange(10, 243, 30)
 
-give_labels = ['Rew not shown', 'Rew shown', 'Prev Action Shown']
-pop_labels = ['0', '-0.05', '-0.1', '-0.2']
-pop_vals = [0, -0.05, -0.1, -0.2]
+# give_labels = ['Rew not shown', 'Rew shown', 'Prev Action Shown']
+pop_labels = ['0', '-0.1', '-0.2', '-0.4']
+give_labels = ['Reward shown', 'Not shown']
+pop_vals = [0, -0.1, -0.2, -0.4]
 p_labels = ['1.0',' 1.2', '1.5', '1.7', '2.0']
 chk_labels = [str(c) for c in chks]
 chk_axis = 'Checkpoint'
@@ -162,6 +163,15 @@ def split_by_ep(res, data):
     for ep_len in ep_lens:
         ep_data.append(data[cur_step:cur_step+ep_len])
         cur_step += ep_len
+    return ep_data
+
+
+def split_by_lens(lens, data):
+    cur = 0
+    ep_data = []
+    for l in lens:
+        ep_data.append(data[cur:cur+l])
+        cur = cur + l
     return ep_data
 
 
@@ -821,7 +831,7 @@ def plot_cluster_grads(grads, labels, ax=None, bar=False):
 
 def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_activ=None, labels=None,
                                    val_grads=None, act_grads=None, influences=None, cluster_influence=None,
-                                   give=False, ep=8, step1=100, step2=130):
+                                   give=False, ep=8, step1=100, step2=130, k=None):
     '''
     Create cluster connectivity plot based on an individual evaluation result set
     Ex. (Default mode, collect data and run)
@@ -849,7 +859,8 @@ def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_a
                                 labels=labels, cluster_influence=cinfluences,
                                 cluster_activ=cactiv, step1=700, step2=740) 
     '''
-    k = np.max(labels) + 1
+    if k is None:
+        k = np.max(labels) + 1
     if model is not None and obs_rms is not None:
         # Default mode: require
         #  model, obs_rms, res, cluster_activ, labels
@@ -877,10 +888,13 @@ def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_a
         val_scores, pol_scores = get_val_and_action_scores(labels=labels,
                                                            val_grads=val_grads,
                                                            act_grads=act_grads)
+    else:
+        a = cluster_activ
+        val_scores, pol_scores = None, None
         
     t = np.arange(step1, step2)
     ts_list = [a[step1:step2, i] for i in range(k)]
-    
+
     if res is not None:
         bsteps = np.array([s for s in res['data']['balloon_step'][ep] if s in range(100, 130)])
         bstep_r = np.array(res['rewards'][ep][bsteps] > 0)
@@ -919,9 +933,9 @@ def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_a
         ax_inset.set_ylim([ymins[i], ymaxs[i]])
         # ax_inset.axis('off')
         cstr = f'C{i+1} '
-        if val_scores[i] is not None:
+        if val_scores and val_scores[i] is not None:
             cstr += f'V:{val_scores[i]:.2f} '
-        if pol_scores[i] is not None:
+        if pol_scores and pol_scores[i] is not None:
             cstr += f'$\pi$:{pol_scores[i]:.2f} '
         
         ax.text(0, 1.1, cstr, transform=ax_inset.transAxes)
@@ -1233,13 +1247,14 @@ def compute_rnn_hxs_influences(model, res, nsteps=100, max_unroll=3):
 
 
 
-def get_cluster_influences(influences, labels):
+def get_cluster_influences(influences, labels, k=None, ):
     '''
     Organize rnn_hx_influences from compute_rnn_hxs_influences into cluster-wise interactions
     Array will have indices (i, j) meaning the average influence of node in cluster
         j to nodes of cluster i
     '''
-    k = max(labels)+1
+    if k is None:
+        k = max(labels)+1
     
     cluster_influence = np.zeros((k, k))
 
@@ -1249,7 +1264,10 @@ def get_cluster_influences(influences, labels):
             nodes_j = np.where(labels == j)[0]
             # Influences from nodes of cluster j to nodes of cluster i
             ij_influence = influences[nodes_i][:, nodes_j]
-            cluster_influence[i, j] = np.mean(ij_influence)
+            if ij_influence.shape[0] > 0 and ij_influence.shape[1] > 0:
+                cluster_influence[i, j] = np.nanmean(ij_influence)
+            else:
+                cluster_influence[i, j] = np.nan
     return cluster_influence
 
     

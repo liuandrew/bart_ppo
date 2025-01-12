@@ -7,6 +7,7 @@ from matplotlib.widgets import LassoSelector
 from matplotlib.path import Path
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+from scipy.stats import ttest_ind
 
 '''
 File for helping with some plotting functions
@@ -147,7 +148,19 @@ def create_color_map(vmin, vmax, cmap_name='viridis'):
     mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
     
     return mappable
-from scipy.stats import ttest_ind
+
+def significance_bars(x1, x2, pvalue, y, ax, dy=0.05):
+    stars = ''
+    if pvalue < 0.05:
+        stars = '*'
+    if pvalue < 0.005:
+        stars = '**'
+    if pvalue < 0.0005:
+        stars = '***'
+
+    if len(stars) > 0:
+        ax.plot([x1, x1, x2, x2], [y+dy, y+2*dy, y+2*dy, y+dy], c='k')
+        ax.text((x1+x2)/2, y+2.5*dy, stars, va='center', ha='center')
 
 def barplot_annotate_brackets(num1, num2, data, center, height, 
                               yerr=None, dh=.05, barh=.05, fs=None, 

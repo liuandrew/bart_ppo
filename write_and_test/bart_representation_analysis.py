@@ -18,7 +18,9 @@ from scipy.stats import skew, kurtosis
 from scipy.optimize import curve_fit
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
+from tslearn.preprocessing import TimeSeriesScalerMeanVariance
 from functools import partial
+from diptest import diptest
 
 pplt.rc.update({'font.size': 10})
 
@@ -38,18 +40,18 @@ MetaBart Evaluation functions
 """
 
 size = np.arange(0.2, 1.01, 0.05)
-env_kwargs = [{'meta_setup': 1, 'colors_used': 1, 
+fixprev_env_kwargs = [{'meta_setup': 1, 'colors_used': 1, 
                             'max_steps': 2500, 'num_balloons': 50,
-                            'inflate_noise': 0,
+                            'inflate_noise': 0, 'fix_prev_action_bug': True,
                             'fix_sizes': [0, s, 0]} for s in size]
 give_env_kwargs = [{'meta_setup': 1, 'colors_used': 1, 
                             'max_steps': 2500, 'num_balloons': 50,
                             'inflate_noise': 0, 'give_rew': True,
                             'fix_sizes': [0, s, 0]} for s in size]
 
-evalu_ = partial(forced_action_evaluate_multi, data_callback=meta_bart_multi_callback,
+fixprev_evalu_ = partial(forced_action_evaluate_multi, data_callback=meta_bart_multi_callback,
                 env_name="BartMetaEnv", num_episodes=1, 
-                env_kwargs=env_kwargs, 
+                env_kwargs=fixprev_env_kwargs, 
                 num_processes=17,
                 seed=1,
                 deterministic=False,
@@ -67,7 +69,7 @@ def evalu(model, obs_rms, give_rew=False):
     if give_rew:
         res = give_evalu_(model, obs_rms)
     else:
-        res = evalu_(model, obs_rms)
+        res = fixprev_evalu_(model, obs_rms)
     res = reshape_parallel_evalu_res(res, meta_balloons=50)
     return res
 
@@ -75,19 +77,17 @@ def evalu(model, obs_rms, give_rew=False):
 def metabart_model_load(idx=None, h=None, i=None, j=None, k=None, l=None):
     if idx is not None:
         h, i, j, k, l = idx
-    give_rew = ['', 'giverew_', 'fixprev_']
-    postfixes = ['', 'pop0.05', 'pop0.1', 'pop0.2']
+    give_rew = ['giverew_', 'fixprev_']
+    postfixes = ['pop0', 'pop0.1', 'pop0.2', 'pop0.4']
     models = [1.0, 1.2, 1.5, 1.7, 2.0]
-    trials = range(3)
-    chks = np.arange(10, 243, 30)
+    trials = range(10)
+    chks = np.arange(40, 243, 30)
     give = give_rew[h]
     postfix = postfixes[i]
     model = models[j]
     t = k
     chk = chks[l]
     
-    if h in [1, 2] and postfix == '':
-        postfix = 'pop0'
     exp_name = f"{give}p{model}n50{postfix}"
     model, (obs_rms, ret_rms) = \
         torch.load(f'../saved_checkpoints/meta_v2/{exp_name}_{t}/{chk}.pt')
@@ -196,6 +196,14 @@ def comb_bottleneck(res, model, layer='shared1', eps=None):
         
     return pca_as
 
+def split_by_lens(lens, data):
+    cur = 0
+    ep_data = []
+    for l in lens:
+        ep_data.append(data[cur:cur+l])
+        cur = cur + l
+    return ep_data
+
 
 """
 
@@ -251,7 +259,7 @@ def select_chks(arr, by='first'):
         raise Exception('Arg should be list (for multiple idxs) or tuple (for one idx)')
     return new_idxs
 
-def select_chks_by_dimension(h=None, i=None, j=None, by='first'):
+def select_chks_by_dimension(h=None, i=None, j=None, by='first', with_chk=False):
     '''
     Get all indices of models including checkpoints selected by "by", fixing the dimensions provided
     dim:
@@ -262,23 +270,32 @@ def select_chks_by_dimension(h=None, i=None, j=None, by='first'):
     it1 = range(2)
     it2 = range(4)
     it3 = range(5)
-    trials = range(3)
+    trials = range(10)
         
     if h is not None:
-        it1 = [h]
+        it1 = h
+        if type(h) != list and type(h) != range:
+            it1 = [h]
     if i is not None:
-        it2 = [i]
+        it2 = i
+        if type(i) != list and type(i) != range:
+            it2 = [i]
     if j is not None:
-        it3 = [j]
+        it3 = j
+        if type(j) != list and type(j) != range:
+            it3 = [j]
     
     idxs = (list(itertools.product(it1, it2, it3, trials)))
     idxs = [tuple(i) for i in idxs]
 
-    return select_chks(idxs)
+    if with_chk:
+        return select_chks(idxs, by=by)
+    return idxs
     
     
     
-def select_random_model(size=1, idx=None, by='first', seed=None, load_models=False):
+def select_random_model(size=1, idx=None, by='first', seed=None, load_models=False,
+                        with_chk=True):
     '''
     Randomly select a tested model, picking a specific checkpoint
     corresponding to by: 'first'/'best'/'close'
@@ -296,6 +313,10 @@ def select_random_model(size=1, idx=None, by='first', seed=None, load_models=Fal
         idxs = pickle.load(open('data/meta_representation_first_idxs', 'rb'))
     elif by == 'close': 
         idxs = pickle.load(open('data/meta_representation_close_idxs', 'rb'))
+
+    if seed is not None:
+        np.random.seed(seed)
+        
     if idx is None:
         total_size = np.prod(idxs.shape)
         models = np.random.choice(np.arange(total_size), size=size, replace=False)
@@ -311,7 +332,7 @@ def select_random_model(size=1, idx=None, by='first', seed=None, load_models=Fal
         for idx in model_idxs:
             h = idx[0]
             model, obs_rms = metabart_model_load(idx)
-            give_rew = True if h == 1 else False
+            give_rew = True if h == 0 else False
             
             r = evalu(model, obs_rms, give_rew)
             models.append(model)
@@ -321,6 +342,9 @@ def select_random_model(size=1, idx=None, by='first', seed=None, load_models=Fal
         if size == 1:
             return model_idxs[0], models[0], obs_rmss[0], rs[0]
         return model_idxs, models, obs_rmss, rs
+    
+    if not with_chk:
+        model_idxs = [idx[:4] for idx in model_idxs]
     if size == 1:
         return model_idxs[0]
     return model_idxs
@@ -328,7 +352,7 @@ def select_random_model(size=1, idx=None, by='first', seed=None, load_models=Fal
 
 """
 
-Ramp to threshold decision process
+# Ramp to threshold decision process
 
 Functions designed to analyze how strong of a ramping signal is used in decision
 making and in which layer the ramping signal is
@@ -375,7 +399,8 @@ as well as then see how they influence downstream decision processes
 
 """
 
-def find_decision_nodes(res, model, ep=0):
+def find_decision_nodes(res, model, ep=0, threshold=0.2, fixed_stim=True,
+                        ret_scores=False):
     """
     Find nodes in the RNN layer that are 'decision' nodes
         by seeing whether they induce a >0.2 decision probability when
@@ -399,7 +424,11 @@ def find_decision_nodes(res, model, ep=0):
         o = res['obs'][ep][step]
         probs[i] = res['action_probs'][ep][step][1]
         delt_rnn = res['rnn_hxs'][ep][step+1] - res['rnn_hxs'][ep][step]
-        delt_rnn = torch.tensor(np.sign(delt_rnn)*2)
+        
+        if fixed_stim:
+            delt_rnn = torch.tensor(np.sign(delt_rnn)*2)
+        else:
+            delt_rnn = torch.tensor(delt_rnn * 2)
         
         
         for j in range(64):
@@ -415,7 +444,10 @@ def find_decision_nodes(res, model, ep=0):
     p = output['probs'][:, 1].detach()
     p = np.array(p).reshape(nsteps, 64)
     scores = (p - probs.reshape(-1, 1)).mean(axis=0)
-    decision_nodes = scores > 0.2
+    decision_nodes = scores > threshold
+    
+    if ret_scores:
+        return decision_nodes, scores
     return decision_nodes
 
 def measure_rnn_influence(res, model, ep, step, decision_nodes=None, ap=False,
@@ -561,6 +593,43 @@ def measure_rnn_influence_multi(res, model, ep, steps, decision_nodes=None, ap=F
         return delt_actor0, delt_rnn_sizes
         
     return delt_actor0
+
+
+"""
+Bimodal RNN structure
+
+Determine whether there is a significant bimodal PCA in the RNN
+"""
+
+def find_bimodal_rnn_pca(rnn_hxs, lens, components=5):
+    '''
+    returns:
+        has_bimodal, ep_rnn, ps (diptest p values), n (most bimodal PCA comp), ep_mean_rnn
+    '''
+    data = rnn_hxs.T  # change to [64, T]
+    scaler = TimeSeriesScalerMeanVariance()
+    data_normalized = scaler.fit_transform(data[:, :, np.newaxis])  # Shape becomes [64, T, 1]
+    rnn_hxs = data_normalized.squeeze().T  # Back to shape [T, 64]
+    pca = PCA(n_components=5)
+    rnn_pc = pca.fit_transform(rnn_hxs)
+    ep_rnn = split_by_lens(lens, rnn_pc)
+
+    ep_mean_rnn = [r.mean(axis=0) for r in ep_rnn]
+    ep_mean_rnn = np.vstack(ep_mean_rnn)
+    ps = []
+    for i in range(ep_mean_rnn.shape[1]):
+        _, p = diptest(ep_mean_rnn[:, i])
+        ps.append(p)
+        
+    # find which nodes have important components
+    comp = np.abs(pca.components_[i])
+    perc = np.percentile(comp, 80)
+    bimodal_nodes = (comp > perc) * 1
+    
+    has_bimodal = min(ps) < 0.05
+    n = np.argmin(ps)
+    return has_bimodal, ep_rnn, ps, n, ep_mean_rnn
+
 """
 
 Behavior scoring
@@ -613,7 +682,11 @@ Some functions to easily make best fit lines
 
 """
 def linear_best_fit(x, y):
-    """Make a linear line of best fit"""   
+    """
+    Make a linear line of best fit
+    returns:
+        (m, b), r2
+    """   
     m, b = np.polyfit(x, y, 1)
     ypred = m*x + b
     

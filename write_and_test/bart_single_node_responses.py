@@ -618,8 +618,12 @@ def plot_stretched_responses(standard_responses, pop_responses, ax=None):
     
 
 def plot_fixed_stimulus_experiment(responses, n, stim_sizes=None, show_end_step=2, reversals=None,
-                                   plot_trajs=5):
+                                   plot_trajs=5, plots=[1, 2]):
     '''
+    plots: Which plots to generate
+        1: Trial by trial node activity
+        2: T+2 end response values
+    
     To get responses and stim_sizes run
     responses, stim_sizes = perform_stimuli_experiment(model, obs_rms, stim_sizes=1)
 
@@ -632,36 +636,42 @@ def plot_fixed_stimulus_experiment(responses, n, stim_sizes=None, show_end_step=
         stim_sizes = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8]
         # stim_sizes = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
     
-    
-    fig, ax = pplt.subplots(ncols=plot_trajs, figwidth=7)
-    
-    for i in range(plot_trajs):
-        for j, size in enumerate(stim_sizes):
-            c = get_color_from_colormap(size, 0.2, 0.8, 'vlag')
-            ax[i].plot(responses[j, start_idx+i, n, :], c=c)
-    ax[-1].colorbar(create_color_map(0.2, 0.8, 'vlag'), label='stim size')
-    toplabels = ['50: Reference \n 0.5 trial', '51: Var size \n stim trial']
-    for i in range(2, plot_trajs):
-        toplabels.append(f'{50+i}: 0.5 \ntrial')
-    ax.format(toplabels=toplabels,
-            xlabel='time step', ylabel='node activity')
+    ret_plots = []
 
-    fig, ax = pplt.subplots(figwidth=3)
-    ax.scatter(stim_sizes, responses[:, stim_idx+show_end_step, n, -1], c=stim_sizes, cmap='vlag')
-    ax.format(xlabel='Stim size', bel='End response after 2 0.5 trials',
-            title='Final step of trial 53 (2 after stim)')
+    if 1 in plots:
+        fig, ax1 = pplt.subplots(ncols=plot_trajs, figwidth=7)
+        for i in range(plot_trajs):
+            for j, size in enumerate(stim_sizes):
+                c = get_color_from_colormap(size, 0.2, 0.8, 'vlag')
+                ax1[i].plot(responses[j, start_idx+i, n, :], c=c)
+        ax1[-1].colorbar(create_color_map(0.2, 0.8, 'vlag'), label='stim size')
+        toplabels = ['50: Reference \n 0.5 trial', '51: Var size \n stim trial']
+        for i in range(2, plot_trajs):
+            toplabels.append(f'{50+i}: 0.5 \ntrial')
+        ax1.format(toplabels=toplabels,
+                xlabel='time step', ylabel='node activity')
+        ret_plots.append(ax1)
 
-    # print('Relative persistent effect size', end_rel_ranges[n])
-    end_resp = responses[:, stim_idx+show_end_step, n, -1]
-    
-    if reversals is not None:
-        rev_idx = np.clip(np.argmin(np.abs(np.array(stim_sizes) - reversals[n])), 2, 11)
-        left_rng = end_resp[:rev_idx].max() - end_resp[:rev_idx].min()
-        right_rng = end_resp[rev_idx:].max() - end_resp[rev_idx:].min()
-        if left_rng < right_rng:
-            print('right sens bias', right_rng / left_rng)
-        else:
-            print('left sens bias', left_rng / right_rng)
+    if 2 in plots:
+        fig, ax2 = pplt.subplots(figwidth=3)
+        ax2.scatter(stim_sizes, responses[:, stim_idx+show_end_step, n, -1], c=stim_sizes, cmap='vlag')
+        ax2.format(xlabel='Stim size', ylabel='End response after 2 0.5 trials',
+                title='Final step of trial 53 (2 after stim)')
+
+        # print('Relative persistent effect size', end_rel_ranges[n])
+        end_resp = responses[:, stim_idx+show_end_step, n, -1]
+        
+        if reversals is not None:
+            rev_idx = np.clip(np.argmin(np.abs(np.array(stim_sizes) - reversals[n])), 2, 11)
+            left_rng = end_resp[:rev_idx].max() - end_resp[:rev_idx].min()
+            right_rng = end_resp[rev_idx:].max() - end_resp[rev_idx:].min()
+            if left_rng < right_rng:
+                print('right sens bias', right_rng / left_rng)
+            else:
+                print('left sens bias', left_rng / right_rng)
+        ret_plots.append(ax2)
+
+    return ret_plots
 
 def plot_pop_stimulus_experiment(responses, n):
     '''
