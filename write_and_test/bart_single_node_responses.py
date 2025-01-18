@@ -144,7 +144,7 @@ Perform stimuli experiment does the whole experiment directly
 '''
 
 def create_meta_stimuli(obs_rms=None, size=0.5, pop=False, rew=None, 
-                        give=False, fix_bug=False, pop_pun=-0.1):
+                        give=False, pop_pun=-0.1):
     '''
     Create a single stimuli of observations
     size: final size of balloon
@@ -155,6 +155,7 @@ def create_meta_stimuli(obs_rms=None, size=0.5, pop=False, rew=None,
     pop_pun: how many points lost on a pop
     '''
     obs_size = 9 if give else 8
+    fix_bug = not give
     n_steps = int(size * 20) + 1
     
     stimuli = np.zeros((n_steps, obs_size), dtype="float32")
@@ -182,7 +183,7 @@ def create_meta_stimuli(obs_rms=None, size=0.5, pop=False, rew=None,
     return stimuli
     
     
-def stimuli_train(obs_rms=None, sizes=[], pops=[], rews=[], give=False, fix_bug=False,
+def stimuli_train(obs_rms=None, sizes=[], pops=[], rews=[], give=False,
                   pop_pun=-0.1):
     '''Create a bunch of meta stimuli, returns the stimuli, starts and ends'''
     all_stim = []
@@ -192,7 +193,7 @@ def stimuli_train(obs_rms=None, sizes=[], pops=[], rews=[], give=False, fix_bug=
     for i in range(len(sizes)):
         starts.append(cur)
         stim = create_meta_stimuli(obs_rms, size=sizes[i], pop=pops[i], rew=rews[i],
-                                   give=give, fix_bug=fix_bug, pop_pun=pop_pun)
+                                   give=give, pop_pun=pop_pun)
         all_stim.append(stim)
         cur += len(stim) - 1
         ends.append(cur)
@@ -214,7 +215,7 @@ def stimuli_responses(model, stim, starts, ends, normalize_by_start=True, stretc
   
   
 def perform_stimuli_experiment(model, obs_rms, give=False, by_rew=True, by_size=True, by_pops=False,
-                               pop_pun=-0.1, stim_sizes=0, fix_bug=False):
+                               pop_pun=-0.1, stim_sizes=0, refsize=0.5):
     '''
     Perform the stimuli experiment used in previous calculations of node behavior
     stim_sizes:
@@ -226,7 +227,6 @@ def perform_stimuli_experiment(model, obs_rms, give=False, by_rew=True, by_size=
     elif stim_sizes == 1:
         stim_sizes = [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 
                       0.55, 0.6, 0.65, 0.7, 0.75, 0.8]
-    refsize = 0.5
     stim_idx = 50
     warmup_stims = stim_idx+1
     post_stim_count = 20
@@ -239,12 +239,12 @@ def perform_stimuli_experiment(model, obs_rms, give=False, by_rew=True, by_size=
         sizes = [refsize]*(warmup_stims+post_stim_count)
         pops = [False]*stim_idx + [True] + [False]*post_stim_count
         stim, starts, ends = stimuli_train(obs_rms, sizes=sizes, pops=pops, rews=rews, give=give,
-                                           pop_pun=pop_pun, fix_bug=fix_bug)
+                                           pop_pun=pop_pun)
         responses[1] = stimuli_responses(model, stim, starts, ends, target_length=16, normalize_by_start=False)
 
         pops = [False]*stim_idx + [False] + [False]*post_stim_count
         stim, starts, ends = stimuli_train(obs_rms, sizes=sizes, pops=pops, rews=rews, give=give,
-                                           pop_pun=pop_pun, fix_bug=fix_bug)
+                                           pop_pun=pop_pun)
         responses[0] = stimuli_responses(model, stim, starts, ends, target_length=16, normalize_by_start=False)
         
     else:
@@ -262,7 +262,7 @@ def perform_stimuli_experiment(model, obs_rms, give=False, by_rew=True, by_size=
             else:
                 sizes = [refsize]*(warmup_stims+post_stim_count)
             stim, starts, ends = stimuli_train(obs_rms, sizes=sizes, pops=[False]*100, rews=rews, give=give,
-                                               fix_bug=fix_bug, pop_pun=pop_pun)
+                                               pop_pun=pop_pun)
             responses[j] = stimuli_responses(model, stim, starts, ends, target_length=16, normalize_by_start=False)
             
     return responses, stim_sizes

@@ -5,6 +5,7 @@ import matplotlib.colors as mcolors
 
 from matplotlib.widgets import LassoSelector
 from matplotlib.path import Path
+import matplotlib.patches as mpatches
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from scipy.stats import ttest_ind
@@ -91,6 +92,9 @@ def linear_bestfit(x, y):
     
     return xs, ys, r2
 
+'''
+Color Functions
+'''
 
 # Colors to assign to auxiliary tasks (they will be assigned in order)
 colors = pplt.Cycle('default').by_key()['color']
@@ -149,7 +153,85 @@ def create_color_map(vmin, vmax, cmap_name='viridis'):
     
     return mappable
 
-def significance_bars(x1, x2, pvalue, y, ax, dy=0.05):
+def color_boxplot(boxplot, c, ax):
+    for patch in boxplot['boxes']:
+        patch = mpatches.PathPatch(patch.get_path(), color=c)
+        ax.add_artist(patch)
+'''
+Significance Utils
+Utility functions for adding p-value annotations to plots
+'''
+def agent_type_significance_test(ys, ax, boxplot=True, bar_dy_ratio=None,
+                                 lim_dy_ratio=None, max_stars=3):
+    '''
+    Perform significance test with boxplot, also automatically find y heights
+    and calibrate ylim using boxplot ranges
+    
+    boxplot: if True, calculate y heights based on boxplot ranges
+        otherwise, calculate based on mean heights assuming bar plot
+    bar_dy_ratio: how much higher [0,2] bar should be than [0,1], [1,2]
+        default 1.5 for boxplot, 2 for bar
+    lim_dy_ratio: how much higher ylim should be than top bar
+        default 3.5 for boxplot, 4 for bar
+    max_stars how many stars we show up to
+    '''
+    if boxplot:
+        # Find boxplot ends
+        high_qs = [np.percentile(ys[i], 75) + \
+        1.5 * (np.percentile(ys[i], 75) - np.percentile(ys[i], 25)) \
+        for i in range(3)]
+        high_qs = [min(high_qs[i], max(ys[i])) for i in range(3)]
+        high_q = max(high_qs)
+        low_qs = [np.percentile(ys[i], 25) - \
+        1.5 * (np.percentile(ys[i], 75) - np.percentile(ys[i], 25)) \
+        for i in range(3)]
+        low_qs = [max(low_qs[i], min(ys[i])) for i in range(3)]
+        low_q = min(low_qs)
+        dy = high_q / 20
+        
+        xidxs = [(0, 1), (1, 2), (0, 2)]
+        xvals = [(0, 0.95), (1.05, 2), (0, 2)]
+        for j in range(3):
+            j1, j2 = xidxs[j]
+            x1, x2 = xvals[j]
+            if j1 == 0 and j2 == 2:
+                if bar_dy_ratio is None:
+                    high_q = high_q + 1.5*dy
+                else:
+                    high_q = high_q + bar_dy_ratio*dy
+            p = ttest_ind(ys[j1], ys[j2]).pvalue
+            significance_bars(x1, x2, p, high_q, ax, dy=dy, max_stars=max_stars)
+        
+        highlim = high_q+3.5*dy if lim_dy_ratio is None else high_q+lim_dy_ratio*dy
+        ax.format(ylim=[low_q-dy, highlim])
+    
+    else:
+        # barplot
+        y = max([np.mean(y) for y in ys])
+        dy = y / 15
+        xidxs = [(0, 1), (1, 2), (0, 2)]
+        xvals = [(0, 0.95), (1.05, 2), (0, 2)]
+        for j in range(3):
+            j1, j2 = xidxs[j]
+            x1, x2 = xvals[j]
+            if j1 == 0 and j2 == 2:
+                if bar_dy_ratio is None:
+                    y = y + 2*dy
+                else:
+                    y = y + bar_dy_ratio*dy
+            p = ttest_ind(ys[j1], ys[j2]).pvalue
+            significance_bars(x1, x2, p, y, ax, dy=dy, max_stars=max_stars)
+
+        highlim = y+3.5*dy if lim_dy_ratio is None else y+lim_dy_ratio*dy
+        ax.format(ylim=[0, highlim])
+        
+
+def color_boxplot(boxplot, c, ax):
+    for patch in boxplot['boxes']:
+        patch = mpatches.PathPatch(patch.get_path(), color=c)
+        ax.add_artist(patch)
+
+def significance_bars(x1, x2, pvalue, y, ax, dy=0.05, max_stars=3):
     stars = ''
     if pvalue < 0.05:
         stars = '*'
@@ -157,6 +239,8 @@ def significance_bars(x1, x2, pvalue, y, ax, dy=0.05):
         stars = '**'
     if pvalue < 0.0005:
         stars = '***'
+
+    stars = stars[:max_stars]
 
     if len(stars) > 0:
         ax.plot([x1, x1, x2, x2], [y+dy, y+2*dy, y+2*dy, y+dy], c='k')
@@ -232,8 +316,6 @@ def barplot_annotate_brackets(num1, num2, data, center, height,
         ax.text(*mid, text, **kwargs)
         
 
-
-
 def add_p_star(x, y, pvalue, ax, red=False):
     stars = ''
     if pvalue < 0.05:
@@ -247,6 +329,9 @@ def add_p_star(x, y, pvalue, ax, red=False):
     ax.text(x, y, stars, ha='center', color=color) 
     
 
+'''
+Miscellaneous functions
+'''
 
 def create_lasso_selector_plot(data):
     '''

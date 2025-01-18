@@ -76,7 +76,10 @@ def evalu(model, obs_rms, give_rew=False):
 
 def metabart_model_load(idx=None, h=None, i=None, j=None, k=None, l=None):
     if idx is not None:
-        h, i, j, k, l = idx
+        if len(idx) == 4:
+            h, i, j, k, l = select_chks(idx)
+        else:
+            h, i, j, k, l = idx
     give_rew = ['giverew_', 'fixprev_']
     postfixes = ['pop0', 'pop0.1', 'pop0.2', 'pop0.4']
     models = [1.0, 1.2, 1.5, 1.7, 2.0]

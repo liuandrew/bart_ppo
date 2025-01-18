@@ -896,7 +896,7 @@ def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_a
     ts_list = [a[step1:step2, i] for i in range(k)]
 
     if res is not None:
-        bsteps = np.array([s for s in res['data']['balloon_step'][ep] if s in range(100, 130)])
+        bsteps = np.array([s for s in res['data']['balloon_step'][ep] if s in range(step1, step2)])
         bstep_r = np.array(res['rewards'][ep][bsteps] > 0)
 
     ymins = cluster_activ.min(axis=0)
@@ -923,7 +923,8 @@ def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_a
         y_fig = (R + 2.5*w) * np.sin(theta[i])
         x_fig2, y_fig2 = inv(trans((x_fig, y_fig)))
         ax_inset = fig.add_axes([x_fig2 - w*0.9, y_fig2 - w*0.6, w, w])
-        ax_inset.plot(t, ts_list[i], color='black', zorder=1)
+        # ax_inset.plot(t, ts_list[i], color='black', zorder=1)
+        ax_inset.scatter(t, ts_list[i], color='black', zorder=1, s=10)
         
         if res is not None:
             ax_inset.scatter(bsteps[bstep_r], a[bsteps[bstep_r], i], c=rgb_colors[2], s=15, zorder=2)
@@ -1117,7 +1118,8 @@ def cluster_grads(grads, labels):
 
 
 def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
-                              plot=True, give=False, ax=None, bar=True):
+                              plot=True, give=False, ax=None, bar=True,
+                              multiply_by_inputs=True, fixed_obs=True):
     '''
     Use integrated gradients to see the influence of each hidden node on
     certain output
@@ -1132,6 +1134,7 @@ def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
     idxs = np.arange(rnn_hxs.shape[0])
     idxs = np.random.permutation(idxs)
     targets = rnn_hxs[idxs[:50]]
+    rand_obs = np.vstack(res['obs'])[idxs[:50]]
 
     if give:
         base_obs = np.array([0, 1, 0, 0, 0, 0, 0.6, 0, 0]) # defines size 0 balloon with color and prev action nothing
@@ -1141,7 +1144,7 @@ def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
 
     # hxs should have shape [1, N, hidden_size]
     # obs with batch_first=False have shape [1, N, obs_size]
-    def forward(hxs):
+    def forward(hxs, base_obs):
         n = hxs.shape[0]
         hxs = hxs.reshape(1, n, 64)
         obs = np.full((1, n, len(base_obs)), base_obs)
@@ -1166,10 +1169,15 @@ def test_integrated_gradients(model, obs_rms, res, labels=None, test='value',
         target_idx = 1
 
     grads = []
-    cond = IntegratedGradients(forward)
-    for target in targets:
+    cond = IntegratedGradients(forward, multiply_by_inputs=multiply_by_inputs)
+    for i, target in enumerate(targets):
         target_hxs = torch.tensor(target.reshape(1, 1, 64))
-        grad = cond.attribute(target_hxs, target=target_idx)
+        if fixed_obs:
+            obs = base_obs
+        else:
+            obs = rand_obs[i]
+        grad = cond.attribute(target_hxs, target=target_idx,
+                            additional_forward_args=obs)
         grad = grad.squeeze()
         grads.append(grad)
 
@@ -1244,6 +1252,71 @@ def compute_rnn_hxs_influences(model, res, nsteps=100, max_unroll=3):
     cumu_influences = np.array(all_influences).mean(axis=0)
     return cumu_influences
 
+
+
+def compute_gradient_influences(model, res, nsteps=100, max_unroll=3,
+                                test='value', pure_grad=True):
+    '''
+    Compute a signed measure of influence of a node on the agent output
+    
+    Core idea: 
+        - Select N random steps from the agent's history
+        - Select a random number M of steps in the future to simulate
+        - Measure how the RNN changes based on these M steps thaat the agent experienced
+        - Compute the final value or button press probability (depending on if test
+          is "value" or "action")
+        - Take the backward pass gradient, i.e. measure the influence that node i
+          had on the output from M steps in the past
+        - If pure_grad is False, also multiply the gradient by the actual activation
+          of the node, which may measure how much actual contribution to output it provides
+    '''
+    n = nsteps
+
+    rnn_hxs = np.vstack(res['rnn_hxs'])
+    obs = np.vstack(res['obs'])
+    idxs = np.arange(max_unroll, rnn_hxs.shape[0]-max_unroll)
+    idxs = np.random.permutation(idxs)
+
+    all_influences = []
+
+    for j in range(n):
+        unroll = np.random.randint(1, max_unroll+1)
+        start = idxs[j]
+        end = start + unroll
+        prev = rnn_hxs[start-1]
+        next = rnn_hxs[start+1]
+        cur = rnn_hxs[start]
+
+        diff = cur - prev
+        activation = cur.reshape(-1)
+        move = np.sign(rnn_hxs[start+unroll-1] - rnn_hxs[start+unroll])
+
+        cur = torch.tensor(cur.reshape(1, 1, 64), requires_grad=True)
+        
+        o = torch.tensor(obs[start:end], dtype=torch.float32).unsqueeze(1)
+        x = model.base.shared0(o)
+        x = model.base.gru(x, cur)[1]
+
+        if test == 'value':
+            x = model.base.critic1(x)
+            targ = model.base.critic_head(x)
+        elif test == 'action':
+            x = model.base.actor0(x)
+            x = model.base.actor1(x)
+            dist = model.dist(x)
+            targ = dist.probs[0, 0, 1]
+
+        model.zero_grad()
+        targ.backward(retain_graph=True)
+        grad = cur.grad.squeeze()
+        cur.grad = None
+        if pure_grad:
+            all_influences.append(grad)
+        else:
+            all_influences.append(grad * activation) 
+        
+    cumu_influences = np.array(all_influences).mean(axis=0)
+    return cumu_influences
 
 
 
