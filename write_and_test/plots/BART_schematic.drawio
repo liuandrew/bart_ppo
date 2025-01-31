@@ -1,0 +1,76 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" version="26.0.10">
+  <diagram name="Page-1" id="poNek39MuH_CGAOrPGMv">
+    <mxGraphModel dx="1195" dy="682" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="800" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-2" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-3" value="0.2" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="17" y="153" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-4" value="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="90" y="153" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-7" value="&lt;pre style=&quot;margin-top: 0px; margin-bottom: 0px;&quot;&gt;&lt;font face=&quot;Helvetica&quot;&gt;1. Select μ&lt;/font&gt;&lt;/pre&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="30" y="110" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-8" value="" style="triangle;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="290" y="134" width="10" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-9" value="Wait" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="310" y="124" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-10" value="" style="triangle;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="290" y="163" width="10" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-11" value="Start / Stop" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="310" y="153" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-12" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="194.75" y="140.5" width="20" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-13" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="214.75" y="151" as="sourcePoint" />
+            <mxPoint x="234.75" y="150.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-14" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="170" y="115.25" width="69.5" height="69.5" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-15" value="&lt;b&gt;Actions&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="290" y="104" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-16" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="130" y="150" as="sourcePoint" />
+            <mxPoint x="160" y="149.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-18" value="&lt;div style=&quot;text-align: left;&quot;&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;2. Draw max balloon size ~N(&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;μ, .05) &lt;span style=&quot;font-weight: normal;&quot;&gt;x50&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="170" y="80" width="120" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-19" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="390" y="134" as="sourcePoint" />
+            <mxPoint x="430" y="110" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-20" value="Reward on stop&lt;div&gt;r = s&lt;sup&gt;p&lt;/sup&gt;&lt;/div&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="440" y="84" width="120" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-21" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="390" y="144" as="sourcePoint" />
+            <mxPoint x="430" y="170" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="V3wsf1AL1FlFTAEoMEeo-22" value="Optional punishment&lt;div&gt;on pop&lt;/div&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="440" y="145" width="120" height="46" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

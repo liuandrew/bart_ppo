@@ -371,7 +371,7 @@ def score_logistic_classifiers(res):
     f1_scores = np.zeros((6, 11))
     individual_scores = np.zeros((6, 64))
     
-    actions  = np.vstack(res['actions'])
+    actions = np.vstack(res['actions'])
     for n, layer in enumerate(layers):
         pca_as = comb_pca(res, layer)
         pcas = np.vstack(pca_as)
@@ -393,6 +393,27 @@ def score_logistic_classifiers(res):
     return f1_scores, individual_scores
 
 
+def score_logistic_classifiers(res):
+    '''
+    Score how well decision can be classified by logistic regression
+    in each of the layers, with PCAs and with all activations
+    '''
+    layers = ['shared1', 'actor0']
+    f1_scores = np.zeros((2, 10))
+    ramp_pc = np.zeros(2) # which layer ramp signal is for RNN and actor0
+    
+    actions = np.vstack(res['actions']).reshape(-1)
+    for n, layer in enumerate(layers):
+        pca_as = comb_pca(res, layer)
+        pcas = np.vstack(pca_as)
+        for j in range(10):
+            lm = LogisticRegression()
+            lm.fit(pcas[:, j].reshape(-1, 1), actions)
+            ypred = lm.predict(pcas[:, j].reshape(-1, 1))
+            f1_scores[n, j] = f1_score(actions.reshape(-1), ypred)
+    
+    ramp_pc = np.argmax(f1_scores, axis=1)
+    return f1_scores, ramp_pc
 """
 
 Decision nodes and decision flow

@@ -24,7 +24,8 @@ from sklearn.metrics import (
     r2_score
 )
 from captum.attr import LayerIntegratedGradients, LayerConductance, IntegratedGradients
-    
+from scipy.stats import pearsonr
+from itertools import combinations
 
 
 pplt.rc.update({'font.size': 10})
@@ -435,6 +436,116 @@ def train_bottleneck_compressor(res, y=None, n_components=3, layer='shared1'):
     r_squared_nn = r2_score(y, y_pred)
 
     return nn_model, (mse_nn, r_squared_nn)
+
+
+'''
+
+Additional Clustering Methods for Activations
+Refined functions for kmeans clustering
+
+'''
+
+def prepare_activations_for_clustering(activ):
+    '''
+    Given time series node activity data of shape (T, N), normalize the data
+    along the time dimension for clustering
+    
+    Also returns a negative copy of the activity for to handle symmetric clustering
+    returns
+        norm_activ (T, N)
+        comb_activ (2*N, T)
+    '''
+    scaler = TimeSeriesScalerMeanVariance()
+    activ_normalized = scaler.fit_transform(activ.T[:, :, np.newaxis])
+    activ_normalized = activ_normalized.squeeze()
+    comb_activ = np.vstack([activ_normalized, -activ_normalized])
+    norm_activ = activ_normalized.T
+    return norm_activ, comb_activ
+
+
+def find_redundant_cluster_pairs(centers):
+    '''
+    Given cluster centers of shape (N, T), determine which are redundant
+    pairs
+    '''
+    N, T = centers.shape
+    redundant_pairs = []
+    redundant_set = set()
+    # Compute pairwise correlations
+    for i, j in combinations(range(N), 2):
+        corr, _ = pearsonr(centers[i], centers[j])
+        if corr <= -0.90:
+            redundant_pairs.append((i, j))
+            redundant_set.add(j)
+            redundant_set.add(i)
+
+    for i in range(N):
+        if i not in redundant_set:
+            redundant_pairs.append((i,))
+            redundant_set.add(i)
+    redundant_pairs
+
+    keep_centers = [centers[pair[0]] for pair in redundant_pairs]
+    keep_centers = np.vstack(keep_centers)
+    return keep_centers
+
+def generate_activation_kmeans(norm_activ, comb_activ, k=3, return_pair_removed=True):
+    '''
+    Create kmeans for some activation data, assuming norm_activ and 
+    comb_activ (which is just norm_activ doubled to figure out orientations)
+    come from prepare_activations_for_clustering()
+
+    return_pair_removed: if True, after finding redundant pairs perform the extra step
+        of creating a kmeans with the correct number of clusters after removing
+        redundant pairs
+    
+    returns
+        labels, orientation, kmeans, dists
+    '''
+    kmeans = KMeans(n_clusters=k, random_state=0)
+    labels = kmeans.fit_predict(comb_activ)
+    centers = kmeans.cluster_centers_
+
+    keep_centers = find_redundant_cluster_pairs(centers)
+    orientation = []
+    labels = []
+    for i in range(norm_activ.shape[1]):
+        right_dist = np.linalg.norm(keep_centers - norm_activ[:, i], axis=1)
+        left_dist = np.linalg.norm(keep_centers + norm_activ[:, i], axis=1)
+
+        if right_dist.min() < left_dist.min():
+            orientation.append(1)
+            labels.append(np.argmin(right_dist))
+        else:
+            orientation.append(-1)
+            labels.append(np.argmin(left_dist))
+    dists = []
+    for i in range(norm_activ.shape[1]):
+        dists.append(np.linalg.norm(
+                    keep_centers[labels[i]] - norm_activ[:, i]*orientation[i]))
+    
+    if return_pair_removed:
+        kmeans = generate_keep_center_kmeans(keep_centers, norm_activ, orientation)
+        
+    return labels, orientation, kmeans, dists
+
+def generate_keep_center_kmeans(keep_centers, norm_activ, orientation,
+                                manual_reordering=None):
+    '''
+    After removing redundant pairs, regenerate a kmeans that keeps only the 
+    correct kept centers
+    '''
+    if manual_reordering is not None:
+        kmeans = KMeans(n_clusters=len(keep_centers), n_init=1,
+                                init=[keep_centers[i] for i in manual_reordering])
+        kmeans.fit((norm_activ * orientation).T)
+        kmeans.cluster_centers_ = [keep_centers[i] for i in manual_reordering]
+    else:
+        kmeans = KMeans(n_clusters=len(keep_centers), n_init=1,
+                                init=keep_centers)
+        kmeans.fit((norm_activ * orientation).T)
+        kmeans.cluster_centers_ = keep_centers
+    return kmeans
 
 '''
 
@@ -989,6 +1100,61 @@ def visualize_cluster_connectivity(model=None, obs_rms=None, res=None, cluster_a
                         shrinkB=20,
                     )
                 )
+
+
+def visualize_forced_traj_cluster_activs(centers, mus=[1, 4, 7, 10], forced_res=None,
+                                         add_toplabels=True):
+    '''
+    Visualize the activity of clusters from some forced trajectories
+    forced_res: used to get lengths of episodes to correctly split the time steps of centers
+    '''
+    step1, step2 = 1503, 1603 # used to plot the zoomed in version
+    mus = np.arange(0.2, 1.01, 0.05)[mus]
+    k = len(centers)
+    lens = None
+    if forced_res is not None:
+        lens = [len(o) for o in forced_res['obs']]
+
+    fig, ax = pplt.subplots(nrows=k, ncols=2, refaspect=4, figwidth=5,
+                            spanx=False)
+
+    for i in range(k):
+        xlocations = []
+
+        if lens is not None:
+            cur = 0
+            for j in range(4):
+                nxt = cur + lens[j]
+                xlocations.append([cur+j*100, nxt+j*100])
+                ax[i, 0].plot(range(cur+j*100, nxt+j*100), centers[i][cur:cur+lens[j]], 
+                            c=rgb_colors[0])
+                cur = nxt
+        else:
+            ax[i, 0].plot(centers[i], c=rgb_colors[0])
+        ax[i, 1].plot(centers[i][step1:step2])
+    toplabels = []
+    if add_toplabels:
+        toplabels = ['4 trials activity', '$\mu$=0.7 example activity']
+    
+    ax.format(leftlabels=[f'C{i}' for i in range(1, k+1)],
+            toplabels=toplabels)
+    ax[:, 0].format(xlocator=[])
+    ax[:, 1].format(xlocator=np.arange(0, 100, 20), 
+            xformatter=[str(i) for i in np.arange(100, 200, 20)],
+            xlabel='t')
+
+    low = centers[-1].min()
+    high = centers[-1].max()
+    for i, (x1, x2) in enumerate(xlocations):
+        ax[-1, 0].plot([x1, x2], [low-0.3, low-0.3], c='black', lw=2)
+        ax[-1, 0].text((x1 + x2) / 2, low - 1, f'{mus[i]:.2f}', ha='center', 
+                    va='top')
+    ax[-1, 0].text(np.mean(xlocations)*1.1, low-2, 'Balloon $\mu$', ha='center',
+                va='top')
+    ax[-1, 0].format(ylim=[low-0.7, high+0.1])
+
+    return fig, ax
+    
 
 '''
 

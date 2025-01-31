@@ -9,6 +9,7 @@ import matplotlib.patches as mpatches
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from scipy.stats import ttest_ind
+from scipy.stats import t
 
 '''
 File for helping with some plotting functions
@@ -92,6 +93,32 @@ def linear_bestfit(x, y):
     
     return xs, ys, r2
 
+
+def get_ci(data, err_bars=True, ci=0.95):
+    '''
+    Compute confidence intervals for a 1d data set
+    err_bars: if True, return just the error bars for plotting
+              if False, return the actual (ci_lower, ci_upper) confidence intervals
+    '''
+    confidence_level = ci
+
+    mean = np.mean(data)
+    std_dev = np.std(data, ddof=1)  # Use ddof=1 for sample standard deviation
+    n = len(data)
+
+    sem = std_dev / np.sqrt(n)
+    alpha = 1 - confidence_level
+    critical_value = t.ppf(1 - alpha / 2, df=n - 1)  # Two-tailed t critical value
+    margin_of_error = critical_value * sem
+
+    if err_bars:
+        return margin_of_error
+    
+    ci_lower = mean - margin_of_error
+    ci_upper = mean + margin_of_error
+    return (ci_lower, ci_upper)
+    
+
 '''
 Color Functions
 '''
@@ -162,7 +189,9 @@ Significance Utils
 Utility functions for adding p-value annotations to plots
 '''
 def agent_type_significance_test(ys, ax, boxplot=True, bar_dy_ratio=None,
-                                 lim_dy_ratio=None, max_stars=3):
+                                 lim_dy_ratio=None, max_stars=3, 
+                                 manual_y_start=None, manual_height=None,
+                                 ci_plot=False):
     '''
     Perform significance test with boxplot, also automatically find y heights
     and calibrate ylim using boxplot ranges
@@ -173,9 +202,50 @@ def agent_type_significance_test(ys, ax, boxplot=True, bar_dy_ratio=None,
         default 1.5 for boxplot, 2 for bar
     lim_dy_ratio: how much higher ylim should be than top bar
         default 3.5 for boxplot, 4 for bar
+        
+    manual_y_start, mannual_heights: give fixed values for where significance bars
+        should start and how tall they should be
     max_stars how many stars we show up to
     '''
-    if boxplot:
+    if manual_y_start is not None and manual_height is not None:
+        xidxs = [(0, 1), (1, 2), (0, 2)]
+        xvals = [(0, 0.95), (1.05, 2), (0, 2)]
+        dy = manual_height
+        high_q = manual_y_start
+        for j in range(3):
+            j1, j2 = xidxs[j]
+            x1, x2 = xvals[j]
+            if j1 == 0 and j2 == 2:
+                high_q = high_q + 1.5*dy
+            p = ttest_ind(ys[j1], ys[j2]).pvalue
+            significance_bars(x1, x2, p, high_q, ax, dy=dy, max_stars=max_stars)
+            
+    elif ci_plot:
+        xidxs = [(0, 1), (1, 2), (0, 2)]
+        xvals = [(0, 0.95), (1.05, 2), (0, 2)]
+
+        cis = [get_ci(y) for y in ys]
+        y_means = [np.mean(y) for y in ys]
+        y_highs = [y_means[i] + cis[i] for i in range(3)]
+        y_lows = [y_means[i] - cis[i] for i in range(3)]
+        y_range = max(y_highs) - min(y_lows)
+        
+        sig_start = max(y_highs) + 0.1*y_range
+        sig_size = 0.1*y_range
+        
+        for j in range(3):
+            j1, j2 = xidxs[j]
+            x1, x2 = xvals[j]
+            if j1 == 0 and j2 == 2:
+                start = sig_start + 2*sig_size
+            else:
+                start = sig_start
+            p = ttest_ind(ys[j1], ys[j2]).pvalue
+            significance_bars(x1, x2, p, start, ax, dy=sig_size, max_stars=max_stars)
+        ax.format(ylim=[min(y_lows)-2*sig_size, sig_start+6*sig_size])
+        
+    
+    elif boxplot:
         # Find boxplot ends
         high_qs = [np.percentile(ys[i], 75) + \
         1.5 * (np.percentile(ys[i], 75) - np.percentile(ys[i], 25)) \
@@ -244,7 +314,7 @@ def significance_bars(x1, x2, pvalue, y, ax, dy=0.05, max_stars=3):
 
     if len(stars) > 0:
         ax.plot([x1, x1, x2, x2], [y+dy, y+2*dy, y+2*dy, y+dy], c='k')
-        ax.text((x1+x2)/2, y+2.5*dy, stars, va='center', ha='center')
+        ax.text((x1+x2)/2, y+2.2*dy, stars, va='center', ha='center')
 
 def barplot_annotate_brackets(num1, num2, data, center, height, 
                               yerr=None, dh=.05, barh=.05, fs=None, 
